@@ -1,0 +1,8 @@
+{
+  "name": " ARISTO(অ্যারিস্টো) - Futuristic EdTech Hub",
+  "description": "A high-performance educational platform featuring a Voice AI companion, immersive 3D interactions, and advanced note-taking tools.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
