@@ -23,15 +23,14 @@ type ExplainerMode = 'UNDERSTANDING' | 'EXAM';
 const AIConceptExplainer: React.FC = () => {
   const { setView, upsertNote, user } = useStore();
   const [topic, setTopic] = useState('');
-  const [level] = useState('Advanced'); // Default to Advanced now that UI is removed
-  const [language, setLanguage] = useState<'Bangla' | 'English'>('Bangla'); // Default set to Bangla
+  const [level] = useState('Advanced');
+  const [language, setLanguage] = useState<'Bangla' | 'English'>('Bangla');
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeMode, setActiveMode] = useState<ExplainerMode | null>(null);
   const [result, setResult] = useState<ConceptExplanation | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Fix: Ensure page starts at the top when the component is opened
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, []);
@@ -46,12 +45,11 @@ const AIConceptExplainer: React.FC = () => {
     setActiveMode(mode);
     setResult(null);
 
-    // Reset scroll when starting generation
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
-      alert("Neural Link Offline: API Key Missing.");
+      alert("Neural Link Offline: API Key Missing. Please add API_KEY to Vercel Environment Variables.");
       setIsGenerating(false);
       return;
     }
@@ -61,8 +59,6 @@ const AIConceptExplainer: React.FC = () => {
     const systemInstruction = `You are part of ARISTO AI Educational Platform.
 The user will select one of two modes: 1) Explain for Understanding, 2) Write as Exam Answer.
 You MUST strictly follow the selected mode instructions.
-The writing style, tone, structure, and depth MUST be completely different for each mode.
-
 Topic: ${topic}
 Language: ${language}
 Selected Mode: ${mode === 'UNDERSTANDING' ? 'Explain for Understanding' : 'Write as Exam Answer'}
@@ -70,48 +66,37 @@ Selected Mode: ${mode === 'UNDERSTANDING' ? 'Explain for Understanding' : 'Write
 ------------------------------------------------------------
 IF MODE = "Explain for Understanding"
 ------------------------------------------------------------
-You are a friendly, patient, and supportive teacher.
-Your goal is to make the student truly understand the topic in the simplest and clearest way possible.
-Strict Rules:
-- Use very simple, natural language. Avoid complex academic vocabulary.
-- Make it feel like real classroom explanation. Use daily life examples and comparisons.
-- Break complex ideas into very small steps.
-- Occasionally ask reflective mini-questions like: "ভাবো তো...", "ধরো যদি...", "এখন প্রশ্ন হলো..."
-- STRUCTURE (MUST INCLUDE BOTH LANGUAGES IN HEADINGS):
+Style: Friendly teacher, simple natural language, daily life examples.
+Structure (Bangla Title | English Title):
   1. সহজ পরিচিতি | Simple Introduction
-  2. আসল ধারণা সহজভাবে | Core Idea in Simple Words
+  2. আসল ধারণা সহজভাবে | Core Idea
   3. বাস্তব জীবনের উদাহরণ | Real-life Example
   4. ধাপে ধাপে বিশ্লেষণ | Step-by-step Breakdown
   5. কেন গুরুত্বপূর্ণ | Why It Matters
   6. ছোট সারাংশ | Simple Summary
-- Length: Minimum 700–1000 words. Be verbose and detailed.
+Length: 700-1000 words.
 
 ------------------------------------------------------------
 IF MODE = "Write as Exam Answer"
 ------------------------------------------------------------
-You are a strict university-level academic writer.
-Your task is to write a high-scoring, full-mark exam answer.
-Strict Rules:
-- Use formal academic tone. Use structured paragraphs. No storytelling.
-- Include definitions, theoretical foundations, analytical discussions, and critical evaluations.
-- Write as if a strict examiner will check it. Use high-level academic vocabulary.
-- STRUCTURE (MUST INCLUDE BOTH LANGUAGES IN HEADINGS):
+Style: Strict university academic writer, formal tone, structured paragraphs.
+Structure (Bangla Title | English Title):
   1. ভূমিকা | Introduction
   2. সংজ্ঞা | Definition
-  3. ঐতিহাসিক বা তাত্ত্বিক পটভূমি | Background / Theoretical Foundation
+  3. পটভূমি | Background
   4. বিস্তারিত আলোচনা | Detailed Discussion
   5. বিশ্লেষণাত্মক পর্যালোচনা | Analytical Evaluation
-  6. প্রয়োগ বা উদাহরণ | Application / Example
+  6. প্রয়োগ | Application
   7. সমালোচনামূলক আলোচনা | Critical Discussion
   8. উপসংহার | Conclusion
-- Length: Minimum 1200–1500 words. Provide extreme depth for each section.
+Length: 1200-1500 words. Provide extreme depth.
 
-For BOTH modes: Headings must follow "Bangla Title | English Title". Avoid shortening explanations.`;
+Return ONLY a raw JSON object matching the requested schema. No backticks, no extra text.`;
 
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: `Explain the topic: ${topic}. Structure the output as JSON.`,
+        model: 'gemini-3-flash-preview', // Switched to Flash for faster processing on Vercel
+        contents: { parts: [{ text: `Generate a high-density, structured academic ${mode === 'EXAM' ? 'exam answer' : 'explanation'} for the topic: "${topic}".` }] },
         config: {
           systemInstruction,
           responseMimeType: 'application/json',
@@ -139,13 +124,24 @@ For BOTH modes: Headings must follow "Bangla Title | English Title". Avoid short
         }
       });
 
-      const data = JSON.parse(response.text || '{}') as ConceptExplanation;
+      let jsonStr = response.text || '{}';
+      
+      // Sanitizing JSON response in case markdown backticks are present
+      jsonStr = jsonStr.trim();
+      if (jsonStr.startsWith('```json')) {
+        jsonStr = jsonStr.replace(/^```json/, '').replace(/```$/, '').trim();
+      } else if (jsonStr.startsWith('```')) {
+        jsonStr = jsonStr.replace(/^```/, '').replace(/```$/, '').trim();
+      }
+
+      const data = JSON.parse(jsonStr) as ConceptExplanation;
+      if (!data.title || !data.sections) throw new Error("Invalid schema received");
+      
       setResult(data);
-      // Scroll to top to see the title of the result
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error) {
       console.error("AI Generation Error:", error);
-      alert("Neural sync error. Failed to generate high-density content.");
+      alert("Neural sync error: AI failed to process complex logic. Please check your internet or API key and try again.");
     } finally {
       setIsGenerating(false);
     }
@@ -236,7 +232,6 @@ For BOTH modes: Headings must follow "Bangla Title | English Title". Avoid short
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-12 min-h-screen">
-      {/* Save Success Popup */}
       <AnimatePresence>
         {saveSuccess && (
           <motion.div 
@@ -270,7 +265,6 @@ For BOTH modes: Headings must follow "Bangla Title | English Title". Avoid short
           </div>
         </div>
 
-        {/* Language Toggle */}
         <div className="relative p-1 glass-dark border-white/5 rounded-2xl flex items-center w-fit overflow-hidden">
           <motion.div 
             layoutId="lang-bg"
@@ -296,7 +290,6 @@ For BOTH modes: Headings must follow "Bangla Title | English Title". Avoid short
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Control Panel */}
         <div className="lg:col-span-4 space-y-6">
           <motion.div className="glass p-8 rounded-[40px] border-white/10 bg-slate-900/40 relative overflow-hidden shadow-2xl">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-600 to-indigo-500" />
@@ -314,7 +307,7 @@ For BOTH modes: Headings must follow "Bangla Title | English Title". Avoid short
 
               <div className="flex gap-4 pt-4">
                 <motion.button 
-                  whileHover={{ scale: 1.05, y: -2, boxShadow: '0 10px 20px -5px rgba(37, 99, 235, 0.4)' }}
+                  whileHover={{ scale: 1.05, y: -2 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => generateContent('UNDERSTANDING')}
                   disabled={isGenerating}
@@ -324,7 +317,7 @@ For BOTH modes: Headings must follow "Bangla Title | English Title". Avoid short
                 </motion.button>
 
                 <motion.button 
-                  whileHover={{ scale: 1.05, y: -2, boxShadow: '0 10px 20px -5px rgba(139, 92, 246, 0.4)' }}
+                  whileHover={{ scale: 1.05, y: -2 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => generateContent('EXAM')}
                   disabled={isGenerating}
@@ -337,7 +330,6 @@ For BOTH modes: Headings must follow "Bangla Title | English Title". Avoid short
           </motion.div>
         </div>
 
-        {/* Output Section */}
         <div className="lg:col-span-8">
           <AnimatePresence mode="wait">
             {!result && !isGenerating && (
