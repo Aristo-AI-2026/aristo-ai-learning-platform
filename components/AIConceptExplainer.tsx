@@ -30,7 +30,6 @@ const AIConceptExplainer: React.FC = () => {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
-  // Use a ref to guarantee we get the input value directly from the DOM
   const topicInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -38,11 +37,10 @@ const AIConceptExplainer: React.FC = () => {
   }, []);
 
   const generateContent = async (mode: ExplainerMode) => {
-    // Get value directly from Ref for maximum reliability
     const currentTopic = topicInputRef.current?.value.trim() || topic.trim();
     
     if (!currentTopic) {
-      alert("অনুগ্রহ করে একটি টপিক লিখুন। (Input is empty)");
+      alert("অনুগ্রহ করে একটি টপিক লিখুন। (Please enter a topic)");
       return;
     }
 
@@ -54,27 +52,69 @@ const AIConceptExplainer: React.FC = () => {
 
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
-      alert("Neural Link Offline: API Key Missing in System.");
+      alert("Neural Link Offline: API Key Missing.");
       setIsGenerating(false);
       return;
     }
 
     const ai = new GoogleGenAI({ apiKey });
 
-    const systemInstruction = `You are an academic expert in Aristo AI. 
-Provide a high-quality academic ${mode === 'EXAM' ? 'EXAM ANSWER' : 'EXPLANATION'}.
+    // Constructing the strict system instruction based on user requirements
+    const systemInstruction = `You are part of ARISTO AI Educational Platform.
+The user will select one of two modes: 1) Explain for Understanding, 2) Write as Exam Answer.
+You MUST strictly follow the selected mode instructions.
+The writing style, tone, structure, and depth MUST be completely different for each mode.
 Topic: ${currentTopic}
 Language: ${language}
+Selected Mode: ${mode === 'UNDERSTANDING' ? 'Explain for Understanding' : 'Write as Exam Answer'}
 
-Rules:
-1. High-density content (700+ words).
-2. Professional ${language}.
-3. JSON output ONLY.`;
+------------------------------------------------------------
+IF MODE = "Explain for Understanding"
+------------------------------------------------------------
+Style: Friendly, patient teacher. Goal: Make the student truly understand in the simplest way.
+Strict Rules:
+- Use very simple, natural language. Avoid complex academic vocabulary.
+- Do NOT write like an exam script or structure like a university answer.
+- Make it feel like a real classroom explanation. Use daily life examples and comparisons.
+- Break complex ideas into small steps. 
+- Ask reflective mini-questions like: "ভাবো তো...", "ধরো যদি...", "এখন প্রশ্ন হলো..."
+Structure (Use bilingual titles):
+  1. সহজ পরিচিতি | Simple Introduction
+  2. আসল ধারণা সহজভাবে | Core Idea in Simple Words
+  3. বাস্তব জীবনের উদাহরণ | Real-life Example
+  4. ধাপে ধাপে বিশ্লেষণ | Step-by-step Breakdown
+  5. কেন গুরুত্বপূর্ণ | Why It Matters
+  6. ছোট সারাংশ | Simple Summary
+Length: Minimum 700–1000 words. Focus on clarity over complexity.
+
+------------------------------------------------------------
+IF MODE = "Write as Exam Answer"
+------------------------------------------------------------
+Style: Strict university-level academic writer. Goal: High-scoring, full-mark exam answer.
+Strict Rules:
+- Use formal academic tone and structured paragraphs.
+- No storytelling or casual language. No oversimplified explanation.
+- Include definitions, theoretical foundations, and analytical discussion.
+- Structure:
+  1. ভূমিকা | Introduction
+  2. সংজ্ঞা | Definition
+  3. ঐতিহাসিক বা তাত্ত্বিক পটভূমি | Background / Theoretical Foundation
+  4. বিস্তারিত আলোচনা | Detailed Discussion
+  5. বিশ্লেষণাত্মক পর্যালোচনা | Analytical Evaluation
+  6. প্রয়োগ বা উদাহরণ | Application / Example
+  7. সমালোচনামূলক আলোচনা | Critical Discussion
+  8. উপসংহার | Conclusion
+Length: Minimum 1200–1500 words. Must look like a university exam script.
+
+------------------------------------------------------------
+GENERAL RULES:
+- Each heading MUST include both Bangla and English titles (e.g., ভূমিকা | Introduction).
+- Return ONLY a raw JSON object matching the schema. No markdown blocks.`;
 
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: { parts: [{ text: `Generate structured academic data for: "${currentTopic}"` }] },
+        contents: { parts: [{ text: `Generate the ${mode === 'EXAM' ? 'exam answer' : 'explanation'} for topic: "${currentTopic}".` }] },
         config: {
           systemInstruction,
           responseMimeType: 'application/json',
@@ -103,8 +143,6 @@ Rules:
       });
 
       let jsonStr = response.text || '';
-      
-      // Sanitizing JSON
       jsonStr = jsonStr.trim();
       const start = jsonStr.indexOf('{');
       const end = jsonStr.lastIndexOf('}') + 1;
@@ -117,7 +155,7 @@ Rules:
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error) {
       console.error("AI Error:", error);
-      alert("Neural sync error: Failed to fetch logic data. Check connection and try again.");
+      alert("Neural sync error: Failed to generate content. Please try again.");
     } finally {
       setIsGenerating(false);
     }
@@ -134,12 +172,16 @@ Rules:
           <h2 style="color: #2563eb; border-left: 5px solid #2563eb; padding-left: 10px;">${section.heading}</h2>
           <p>${section.content}</p>
         `).join('')}
+        <h3>মূল পয়েন্টসমূহ | Key Points</h3>
+        <ul>${result.keyPoints.map(p => `<li>${p}</li>`).join('')}</ul>
+        <p><strong>সারসংক্ষেপ | Summary:</strong> ${result.summary}</p>
+        <p><strong>উপসংহার | Conclusion:</strong> ${result.conclusion}</p>
       </div>
     `;
 
     await upsertNote({
       id: Date.now().toString(),
-      title: `${result.title} (${activeMode})`,
+      title: `${result.title} (${activeMode === 'EXAM' ? 'Exam' : 'Explain'})`,
       content: htmlContent,
       lastModified: Date.now(),
       authorId: user.id
@@ -154,7 +196,27 @@ Rules:
     if (!result) return;
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
-    printWindow.document.write(`<html><body><h1>${result.title}</h1>${result.sections.map(s => `<h2>${s.heading}</h2><p>${s.content}</p>`).join('')}</body></html>`);
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${result.title}</title>
+          <style>
+            body { font-family: 'Times New Roman', serif; padding: 40px; line-height: 1.6; }
+            h1 { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; }
+            h2 { color: #1e40af; border-bottom: 1px solid #ccc; margin-top: 30px; }
+            p { text-align: justify; }
+          </style>
+        </head>
+        <body>
+          <h1>${result.title}</h1>
+          ${result.sections.map(s => `<h2>${s.heading}</h2><p>${s.content}</p>`).join('')}
+          <h2>মূল পয়েন্টসমূহ | Key Points</h2>
+          <ul>${result.keyPoints.map(p => `<li>${p}</li>`).join('')}</ul>
+          <p><strong>সারসংক্ষেপ | Summary:</strong> ${result.summary}</p>
+          <p><strong>উপসংহার | Conclusion:</strong> ${result.conclusion}</p>
+        </body>
+      </html>
+    `);
     printWindow.document.close();
     printWindow.print();
   };
@@ -225,13 +287,14 @@ Rules:
               <div className="h-[500px] flex flex-col items-center justify-center text-center space-y-6">
                 <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
                 <h3 className="text-2xl font-black text-white uppercase animate-pulse">অপেক্ষা করুন... উত্তর প্রস্তুত হচ্ছে</h3>
+                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Applying ${activeMode} Mode Protocols...</p>
               </div>
             )}
 
             {result && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-10 pb-20">
                 <div className="flex flex-col md:flex-row items-center justify-between gap-6 bg-slate-900/40 p-8 rounded-[40px] border border-white/5">
-                  <h2 className="text-3xl font-heading font-black uppercase text-white">{result.title}</h2>
+                  <h2 className="text-3xl font-heading font-black uppercase text-white leading-tight">{result.title}</h2>
                   <div className="flex gap-3">
                     <button onClick={downloadPDF} className="px-5 py-2 glass rounded-xl text-[10px] font-black uppercase text-slate-300">PDF</button>
                     <button onClick={handleSaveToNotes} disabled={isSaving} className="px-5 py-2 bg-blue-600 rounded-xl text-[10px] font-black uppercase text-white">{isSaving ? 'Saving' : 'Save Note'}</button>
@@ -240,12 +303,32 @@ Rules:
 
                 <div className="space-y-10">
                   {result.sections.map((section, idx) => (
-                    <div key={idx} className="glass p-10 rounded-[40px] border-white/5 bg-slate-900/40">
+                    <div key={idx} className="glass p-10 rounded-[40px] border-white/5 bg-slate-900/40 border-l-4 border-l-blue-500">
                       <h4 className="text-2xl font-black text-blue-400 mb-6">{section.heading}</h4>
-                      <p className="text-slate-300 font-medium text-lg text-justify whitespace-pre-wrap">{section.content}</p>
+                      <p className="text-slate-300 font-medium text-lg text-justify whitespace-pre-wrap leading-relaxed">{section.content}</p>
                     </div>
                   ))}
-                  <div className="glass p-10 rounded-[40px] border-white/5 bg-slate-900/60 italic text-slate-100 text-xl font-bold">"{result.summary}"</div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                     <div className="glass p-8 rounded-[40px] border-white/5 bg-blue-600/5">
+                        <h4 className="text-[10px] font-black uppercase text-blue-400 mb-4 tracking-widest">Key Points | মূল পয়েন্টসমূহ</h4>
+                        <ul className="space-y-3">
+                          {result.keyPoints.map((p, i) => (
+                            <li key={i} className="flex gap-3 text-slate-300 text-sm font-bold">
+                               <span className="text-blue-500">•</span> {p}
+                            </li>
+                          ))}
+                        </ul>
+                     </div>
+                     <div className="glass p-8 rounded-[40px] border-white/5 bg-slate-900/60">
+                        <h4 className="text-[10px] font-black uppercase text-indigo-400 mb-4 tracking-widest">Summary | সারসংক্ষেপ</h4>
+                        <p className="text-slate-300 italic font-medium leading-relaxed">"{result.summary}"</p>
+                        <div className="mt-6 pt-6 border-t border-white/5">
+                           <h4 className="text-[9px] font-black uppercase text-slate-500 mb-2 tracking-widest">Conclusion | উপসংহার</h4>
+                           <p className="text-sm text-slate-400">{result.conclusion}</p>
+                        </div>
+                     </div>
+                  </div>
                 </div>
               </motion.div>
             )}
