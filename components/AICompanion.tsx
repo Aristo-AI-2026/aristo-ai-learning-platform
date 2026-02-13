@@ -3,7 +3,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../store';
 import { GoogleGenAI, Modality, GenerateContentResponse, LiveServerMessage } from '@google/genai';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../services/supabase';
 
 // Manual base64 decoding helper
 function decode(base64: string) {
@@ -101,24 +100,24 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
 
   const handleSend = async () => {
     const apiKey = process.env.API_KEY;
-    if (!input.trim() || isTyping || !apiKey) {
-      if (!apiKey) alert("Neural link offline: API Key not detected in system. Please check Vercel settings.");
+    const currentInput = input.trim();
+    if (!currentInput || isTyping || !apiKey) {
+      if (!apiKey) alert("Neural link offline: API Key missing.");
       return;
     }
     
     if (isSTTActive) stopSTT();
 
-    const userMsg = { id: Date.now().toString(), role: 'user' as const, content: input, timestamp: Date.now() };
+    const userMsg = { id: Date.now().toString(), role: 'user' as const, content: currentInput, timestamp: Date.now() };
     await addMessage(userMsg);
     setInput('');
     setIsTyping(true);
 
-    const ai = new GoogleGenAI({ apiKey });
-    
     try {
+      const ai = new GoogleGenAI({ apiKey });
       const responseStream = await ai.models.generateContentStream({
         model: 'gemini-3-flash-preview',
-        contents: input,
+        contents: [{ parts: [{ text: currentInput }] }],
         config: { systemInstruction }
       });
 
@@ -135,9 +134,13 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
           updateLastMessage(fullText);
         }
       }
+      
+      if (!fullText) {
+        throw new Error("Empty response from AI engine.");
+      }
     } catch (error) {
-      console.error(error);
-      addMessage({ id: Date.now().toString(), role: 'assistant', content: "Neural link error. Please try again later.", timestamp: Date.now() });
+      console.error("Chat Protocol Error:", error);
+      updateLastMessage("Neural link instability. Please try sending your query again.");
       setIsTyping(false);
     }
   };
@@ -145,7 +148,7 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
   const startVoiceSession = async () => {
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
-      alert("Neural link offline: API Key missing. Voice communication unavailable.");
+      alert("Neural link offline: API Key missing.");
       setVoiceActive(false);
       return;
     }
@@ -156,7 +159,6 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
       const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       
-      // Resume contexts as browsers often block them initially
       await inputCtx.resume();
       await outputCtx.resume();
       audioContextRef.current = outputCtx;
@@ -166,9 +168,7 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
       const createBlob = (data: Float32Array) => {
         const l = data.length;
         const int16 = new Int16Array(l);
-        for (let i = 0; i < l; i++) {
-          int16[i] = data[i] * 32768;
-        }
+        for (let i = 0; i < l; i++) { int16[i] = data[i] * 32768; }
         return {
           data: encode(new Uint8Array(int16.buffer)),
           mimeType: 'audio/pcm;rate=16000',
@@ -191,9 +191,7 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
               const inputData = e.inputBuffer.getChannelData(0);
               const pcmBlob = createBlob(inputData);
               sessionPromise.then((session) => {
-                if (!isMuted && session) {
-                  session.sendRealtimeInput({ media: pcmBlob });
-                }
+                if (!isMuted && session) { session.sendRealtimeInput({ media: pcmBlob }); }
               });
             };
             source.connect(processor);
@@ -202,60 +200,42 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
           onmessage: async (message: LiveServerMessage) => {
             const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (base64Audio && outputCtx) {
-              const audioBuffer = await decodeAudioData(
-                decode(base64Audio),
-                outputCtx,
-                24000,
-                1
-              );
+              const audioBuffer = await decodeAudioData(decode(base64Audio), outputCtx, 24000, 1);
               const source = outputCtx.createBufferSource();
               source.buffer = audioBuffer;
               source.connect(outputCtx.destination);
-              source.addEventListener('ended', () => {
-                sourceNodesRef.current.delete(source);
-              });
-
+              source.addEventListener('ended', () => { sourceNodesRef.current.delete(source); });
               nextStartTime = Math.max(nextStartTime, outputCtx.currentTime);
               source.start(nextStartTime);
               nextStartTime += audioBuffer.duration;
               sourceNodesRef.current.add(source);
             }
-
             if (message.serverContent?.interrupted) {
-              sourceNodesRef.current.forEach(source => {
-                try { source.stop(); } catch (e) {}
-              });
+              sourceNodesRef.current.forEach(source => { try { source.stop(); } catch (e) {} });
               sourceNodesRef.current.clear();
               nextStartTime = 0;
             }
           },
           onclose: () => setVoiceActive(false),
-          onerror: (e) => {
-            console.error("Voice link error:", e);
-            setVoiceActive(false);
-          }
+          onerror: (e) => { console.error("Voice Error:", e); setVoiceActive(false); }
         }
       });
       sessionRef.current = sessionPromise;
     } catch (e) {
       console.error("Voice Sync Error:", e);
       setVoiceActive(false);
-      alert('Microphone access required and API key must be valid.');
+      alert('Microphone access required.');
     }
   };
 
   const toggleVoice = () => {
     if (isVoiceActive) {
       if (sessionRef.current && sessionRef.current.then) {
-        sessionRef.current.then((s: any) => {
-          if (s) s.close();
-        });
+        sessionRef.current.then((s: any) => { if (s) s.close(); });
       }
       setVoiceActive(false);
       sessionRef.current = null;
-      sourceNodesRef.current.forEach(node => {
-        try { node.stop(); } catch (e) {}
-      });
+      sourceNodesRef.current.forEach(node => { try { node.stop(); } catch (e) {} });
       sourceNodesRef.current.clear();
     } else {
       startVoiceSession();
@@ -270,7 +250,7 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
   const startSTT = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in this browser.");
+      alert("Speech recognition not supported.");
       return;
     }
     if (isVoiceActive) toggleVoice();
@@ -293,10 +273,7 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
   };
 
   const stopSTT = () => {
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch (e) {}
-      recognitionRef.current = null;
-    }
+    if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) {} recognitionRef.current = null; }
     setIsSTTActive(false);
   };
 
@@ -326,7 +303,7 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
               <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-black text-sm md:text-lg shadow-lg text-white">A</div>
               <div>
                 <h3 className="font-heading font-black text-xs md:text-base tracking-tighter uppercase text-white">Aristo</h3>
-                <span className="text-[7px] md:text-[9px] text-green-500 font-bold uppercase tracking-widest">Neural Link Active</span>
+                <span className="text-[7px] md:text-[9px] text-green-500 font-bold uppercase tracking-widest">Active Link</span>
               </div>
            </div>
            <div className="flex items-center gap-2">
@@ -357,17 +334,15 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
                   <div className="w-24 h-24 md:w-32 md:h-32 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center border-4 border-white/10 shadow-[0_0_50px_rgba(59,130,246,0.3)] z-10 relative overflow-hidden">
                     <motion.div animate={{ height: ["20%", "60%", "30%", "80%", "20%"] }} transition={{ duration: 0.8, repeat: Infinity }} className="w-1 md:w-1.5 bg-white rounded-full mx-0.5" />
                     <motion.div animate={{ height: ["40%", "20%", "70%", "30%", "40%"] }} transition={{ duration: 0.6, repeat: Infinity }} className="w-1 md:w-1.5 bg-white rounded-full mx-0.5" />
-                    <motion.div animate={{ height: ["60%", "80%", "40%", "60%", "60%"] }} transition={{ duration: 1, repeat: Infinity }} className="w-1 md:w-1.5 bg-white rounded-full mx-0.5" />
                   </div>
                </div>
-               <div className="text-center px-4">
+               <div className="text-center">
                  <h3 className="text-lg md:text-3xl font-heading font-black tracking-tighter uppercase mb-2 text-white">Listening...</h3>
-                 <p className="text-blue-400 text-[8px] md:text-[10px] font-black uppercase tracking-[4px] animate-pulse">Neural Sync Established</p>
+                 <p className="text-blue-400 text-[8px] md:text-[10px] font-black uppercase tracking-[4px] animate-pulse">Neural Link Active</p>
                </div>
-               <div className="flex flex-wrap items-center justify-center gap-3 md:gap-6 p-3 md:p-4 glass rounded-[20px] md:rounded-[30px] border-white/10 w-full max-w-[280px] md:max-w-none">
-                 <button onClick={() => setIsMuted(!isMuted)} className={`w-10 h-10 md:w-16 md:h-16 rounded-xl md:rounded-2xl flex items-center justify-center transition-all ${isMuted ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-white/5 text-slate-400 hover:text-white border border-white/5'}`}>{isMuted ? "Muted" : "Mute"}</button>
-                 <div className="w-px h-6 md:h-10 bg-white/10" />
-                 <button onClick={toggleVoice} className="px-4 md:px-10 py-3 md:py-5 bg-red-600 rounded-xl md:rounded-2xl font-black text-[9px] md:text-xs uppercase tracking-widest hover:bg-red-500 transition-all shadow-xl shadow-red-500/20 text-white">End Session</button>
+               <div className="flex gap-4 p-4 glass rounded-[30px] border-white/10">
+                 <button onClick={() => setIsMuted(!isMuted)} className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isMuted ? 'bg-red-500/20 text-red-400' : 'bg-white/5 text-slate-400 hover:text-white'}`}>{isMuted ? "Muted" : "Mute"}</button>
+                 <button onClick={toggleVoice} className="px-8 py-4 bg-red-600 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-xl">End</button>
                </div>
             </div>
           )}
@@ -375,31 +350,14 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
         {!isVoiceActive && (
           <div className="p-4 md:p-8 bg-slate-900/60 border-t border-white/5">
             <div className="flex items-end gap-2 md:gap-4 bg-slate-950/60 rounded-[20px] md:rounded-[25px] border border-white/10 p-2 md:p-3 shadow-inner">
-              <textarea 
-                value={input} 
-                onChange={(e) => setInput(e.target.value)} 
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} 
-                placeholder={isSTTActive ? "Listening..." : "Query Aristo..."} 
-                className="flex-grow bg-transparent px-3 md:px-4 py-2 md:py-3 text-xs md:text-base focus:outline-none resize-none max-h-32 min-h-[40px] font-medium text-white" 
-                rows={1} 
-              />
+              <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} placeholder={isSTTActive ? "Listening..." : "Query Aristo..."} className="flex-grow bg-transparent px-3 md:px-4 py-2 md:py-3 text-xs md:text-base focus:outline-none resize-none max-h-32 min-h-[40px] text-white" rows={1} />
               <div className="flex items-center gap-1.5 md:gap-3">
-                <button 
-                  onClick={toggleSTT} 
-                  className={`p-3 md:p-4 rounded-xl md:rounded-2xl transition-all shadow-xl flex items-center justify-center ${isSTTActive ? 'bg-red-600 animate-pulse text-white' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/10'}`}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                <button onClick={toggleSTT} className={`p-3 md:p-4 rounded-xl md:rounded-2xl transition-all ${isSTTActive ? 'bg-red-600 animate-pulse text-white' : 'bg-white/5 text-slate-400 border border-white/10'}`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
                 </button>
-                <button 
-                  onClick={handleSend} 
-                  disabled={!input.trim() || isTyping} 
-                  className="p-3 md:p-4 bg-blue-600 rounded-xl md:rounded-2xl hover:bg-blue-500 transition-all disabled:opacity-30 shadow-xl shadow-blue-500/40 text-white"
-                >
-                  🚀
-                </button>
+                <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-3 md:p-4 bg-blue-600 rounded-xl md:rounded-2xl hover:bg-blue-500 transition-all disabled:opacity-30 text-white">🚀</button>
               </div>
             </div>
-            <p className="text-[7px] md:text-[8px] text-slate-600 text-center mt-3 uppercase tracking-widest">Nexus Hub Protocol v2.5</p>
           </div>
         )}
       </div>

@@ -36,25 +36,22 @@ const AIConceptExplainer: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, []);
 
-  // Robust JSON extractor to handle cases where AI might include extra text or markdown blocks
-  const extractJSON = (text: string) => {
+  const safeJSONParse = (text: string) => {
     try {
-      // Clean potential markdown or extra characters
-      const cleaned = text.trim().replace(/^```json/, '').replace(/```$/, '').trim();
-      return JSON.parse(cleaned);
+      // Direct parse
+      return JSON.parse(text);
     } catch (e) {
-      // Search for the first { and last } to isolate the JSON object manually
-      const firstBrace = text.indexOf('{');
-      const lastBrace = text.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace !== -1) {
+      // Extract from markdown or surrounding text
+      const start = text.indexOf('{');
+      const end = text.lastIndexOf('}');
+      if (start !== -1 && end !== -1) {
         try {
-          const substring = text.substring(firstBrace, lastBrace + 1);
-          return JSON.parse(substring);
+          return JSON.parse(text.substring(start, end + 1));
         } catch (innerE) {
-          throw new Error("Could not find valid JSON in response");
+          throw new Error("Invalid structure returned from AI");
         }
       }
-      throw e;
+      throw new Error("No readable data found");
     }
   };
 
@@ -62,7 +59,7 @@ const AIConceptExplainer: React.FC = () => {
     const currentTopic = topicInputRef.current?.value.trim() || topic.trim();
     
     if (!currentTopic) {
-      alert("অনুগ্রহ করে একটি টপিক লিখুন। (Please enter a topic)");
+      alert("অনুগ্রহ করে একটি টপিক লিখুন।");
       return;
     }
 
@@ -72,7 +69,7 @@ const AIConceptExplainer: React.FC = () => {
 
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
-      alert("Neural Link Offline: API Key Missing in System.");
+      alert("Neural Link Offline: API Key Missing.");
       setIsGenerating(false);
       return;
     }
@@ -86,22 +83,15 @@ Topic: ${currentTopic}
 Language: ${language}
 Selected Mode: ${mode === 'UNDERSTANDING' ? 'Explain for Understanding' : 'Write as Exam Answer'}
 
-------------------------------------------------------------
-MODE: Explain for Understanding
-- Friendly, patient, simple conversational tone.
-- Length: 700-1000 words.
-- Structure: Intro, Core Concept, Real-life Examples, Step-by-step, Summary.
-
-MODE: Write as Exam Answer
-- Academic, formal, university-level structured tone.
-- Length: 1200-1500 words.
-- Structure: Intro, Definition, Background, Detailed Analysis, Examples, Conclusion.
-
-GENERAL RULE: Return ONLY a valid JSON object. Every heading MUST be bilingual (e.g., ভূমিকা | Introduction).`;
+RULES:
+- Respond ONLY with valid JSON.
+- Every heading MUST be bilingual (e.g., ভূমিকা | Introduction).
+- If Explain mode: Friendly, simple language, 700-1000 words.
+- If Exam mode: Academic, formal, structured paragraphs, 1200-1500 words.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: { parts: [{ text: `Generate a comprehensive ${mode === 'EXAM' ? 'university exam answer' : 'friendly explanation'} for: "${currentTopic}" in ${language}. Ensure the length requirements are strictly met.` }] },
+        contents: [{ parts: [{ text: `Generate a full ${mode === 'EXAM' ? 'exam answer' : 'friendly explanation'} for: "${currentTopic}" in ${language}. Ensure the length requirements are strictly met.` }] }],
         config: {
           systemInstruction,
           responseMimeType: 'application/json',
@@ -129,13 +119,12 @@ GENERAL RULE: Return ONLY a valid JSON object. Every heading MUST be bilingual (
         }
       });
 
-      const data = extractJSON(response.text || '');
+      const data = safeJSONParse(response.text || '');
       setResult(data);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error) {
       console.error("AI Generation Error:", error);
-      // Fallback message for user
-      alert("Neural sync instability detected. Please try a more specific topic or re-sync your connection.");
+      alert("Neural sync instability. Please refine your topic and try again.");
     } finally {
       setIsGenerating(false);
     }
@@ -176,43 +165,29 @@ GENERAL RULE: Return ONLY a valid JSON object. Every heading MUST be bilingual (
 
   const downloadPDF = () => {
     if (!result) return;
-    
-    // Stable Blob Method for all devices
     const htmlContent = `
-      <html>
-        <head>
-          <title>${result.title}</title>
-          <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
-            body { font-family: 'Times New Roman', serif; padding: 40px; line-height: 1.8; color: #000; }
-            h1 { text-align: center; border-bottom: 2px solid #000; padding-bottom: 15px; text-transform: uppercase; font-size: 22pt; }
-            h2 { border-bottom: 1px solid #666; margin-top: 30px; font-size: 16pt; }
-            p { text-align: justify; font-size: 12pt; margin-bottom: 15px; }
-            .box { border: 1px solid #000; padding: 15px; margin-top: 30px; }
-          </style>
-        </head>
-        <body>
-          <h1>${result.title}</h1>
-          ${result.sections.map(s => `<h2>${s.heading}</h2><p>${s.content}</p>`).join('')}
-          <h2>Key Points</h2>
-          <ul>${result.keyPoints.map(p => `<li>${p}</li>`).join('')}</ul>
-          <div class="box">
-            <p><strong>Summary:</strong> ${result.summary}</p>
-            <p><strong>Conclusion:</strong> ${result.conclusion}</p>
-          </div>
-          <script>window.onload = function() { window.print(); };</script>
-        </body>
-      </html>
+      <html><head><title>${result.title}</title><style>
+        body { font-family: 'Times New Roman', serif; padding: 40px; line-height: 1.8; color: #000; }
+        h1 { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; font-size: 22pt; text-transform: uppercase; }
+        h2 { border-bottom: 1px solid #777; margin-top: 30px; font-size: 16pt; }
+        p { text-align: justify; font-size: 12pt; margin-bottom: 15px; }
+        .summary { border: 1px solid #000; padding: 20px; margin-top: 30px; }
+      </style></head><body>
+        <h1>${result.title}</h1>
+        ${result.sections.map(s => `<h2>${s.heading}</h2><p>${s.content}</p>`).join('')}
+        <div class="summary">
+          <p><strong>Summary:</strong> ${result.summary}</p>
+          <p><strong>Conclusion:</strong> ${result.conclusion}</p>
+        </div>
+        <script>window.onload = function() { window.print(); };</script>
+      </body></html>
     `;
-
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const win = window.open(url, '_blank');
     if (!win) {
       const link = document.createElement('a');
-      link.href = url;
-      link.target = '_blank';
-      link.click();
+      link.href = url; link.target = '_blank'; link.click();
     }
   };
 
@@ -221,7 +196,7 @@ GENERAL RULE: Return ONLY a valid JSON object. Every heading MUST be bilingual (
       <AnimatePresence>
         {saveSuccess && (
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="fixed top-10 left-1/2 -translate-x-1/2 z-[200] bg-slate-900 border border-green-500/30 px-6 py-3 rounded-full text-green-400 font-bold text-xs shadow-2xl">
-            Success: Record Synthesized & Saved
+            Success: Saved to Records
           </motion.div>
         )}
       </AnimatePresence>
@@ -233,7 +208,7 @@ GENERAL RULE: Return ONLY a valid JSON object. Every heading MUST be bilingual (
           </button>
           <div>
             <h1 className="text-2xl md:text-3xl font-heading font-black uppercase text-white tracking-tighter">AI Concept Explainer</h1>
-            <p className="text-slate-400 text-[9px] font-black uppercase tracking-[3px]">Academic logic protocol: ACTIVE</p>
+            <p className="text-slate-400 text-[9px] font-black uppercase tracking-[3px]">Academic Node: Online</p>
           </div>
         </div>
 
@@ -255,29 +230,27 @@ GENERAL RULE: Return ONLY a valid JSON object. Every heading MUST be bilingual (
                 defaultValue={topic}
                 onChange={(e) => setTopic(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') generateContent('UNDERSTANDING'); }}
-                placeholder="যেমন: ডিমান্ড অ্যান্ড সাপ্লাই"
-                className="w-full bg-slate-950/50 border border-white/10 rounded-2xl px-5 py-4 text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/60 transition-all placeholder:text-slate-700 text-sm"
+                placeholder="টপিকটি লিখুন..."
+                className="w-full bg-slate-950/50 border border-white/10 rounded-2xl px-5 py-4 text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/60 transition-all placeholder:text-slate-800 text-sm"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <motion.button 
-                whileHover={{ scale: 1.02, boxShadow: "0 10px 20px rgba(37, 99, 235, 0.2)" }}
-                whileTap={{ scale: 0.98 }}
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                 onClick={() => generateContent('UNDERSTANDING')} 
                 disabled={isGenerating} 
-                className="py-4 rounded-xl font-black text-[9px] uppercase tracking-widest bg-blue-600 text-white disabled:opacity-50 transition-all flex flex-col items-center justify-center gap-2"
+                className="py-4 rounded-xl font-black text-[9px] uppercase tracking-widest bg-blue-600 text-white disabled:opacity-50 transition-all flex flex-col items-center justify-center gap-2 shadow-lg"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
                 Explain
               </motion.button>
               
               <motion.button 
-                whileHover={{ scale: 1.02, boxShadow: "0 10px 20px rgba(99, 102, 241, 0.2)" }}
-                whileTap={{ scale: 0.98 }}
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                 onClick={() => generateContent('EXAM')} 
                 disabled={isGenerating} 
-                className="py-4 rounded-xl font-black text-[9px] uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-50 transition-all flex flex-col items-center justify-center gap-2"
+                className="py-4 rounded-xl font-black text-[9px] uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-50 transition-all flex flex-col items-center justify-center gap-2 shadow-lg"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 Exam Mode
@@ -293,8 +266,8 @@ GENERAL RULE: Return ONLY a valid JSON object. Every heading MUST be bilingual (
                 <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center mb-6 text-slate-700">
                   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
                 </div>
-                <h2 className="text-xl font-black text-slate-500 uppercase tracking-tighter">Academic Synthesis Ready</h2>
-                <p className="text-slate-600 text-[9px] font-black uppercase tracking-widest mt-2">Enter topic and choose mode to begin</p>
+                <h2 className="text-xl font-black text-slate-500 uppercase tracking-tighter">Academic Hub Ready</h2>
+                <p className="text-slate-600 text-[9px] font-black uppercase tracking-widest mt-2">Enter topic and choose mode to begin synthesis</p>
               </motion.div>
             )}
 
@@ -323,13 +296,7 @@ GENERAL RULE: Return ONLY a valid JSON object. Every heading MUST be bilingual (
 
                 <div className="space-y-8">
                   {result.sections.map((section, idx) => (
-                    <motion.div 
-                      key={idx} 
-                      initial={{ opacity: 0, y: 15 }}
-                      whileInView={{ opacity: 1, y: 0 }}
-                      viewport={{ once: true }}
-                      className="glass p-8 md:p-12 rounded-[40px] border-white/5 bg-slate-900/40 border-l-[4px] border-l-blue-600 shadow-xl"
-                    >
+                    <motion.div key={idx} initial={{ opacity: 0, y: 15 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="glass p-8 md:p-12 rounded-[40px] border-white/5 bg-slate-900/40 border-l-[4px] border-l-blue-600 shadow-xl">
                       <h4 className="text-xl md:text-2xl font-black text-blue-400 mb-6 tracking-tight">{section.heading}</h4>
                       <p className="text-slate-300 font-medium text-base md:text-lg text-justify whitespace-pre-wrap leading-relaxed opacity-90">{section.content}</p>
                     </motion.div>
@@ -346,7 +313,6 @@ GENERAL RULE: Return ONLY a valid JSON object. Every heading MUST be bilingual (
                           ))}
                         </ul>
                      </div>
-                     
                      <div className="glass p-8 rounded-[40px] border-white/5 bg-slate-900/80">
                         <h4 className="text-[9px] font-black uppercase text-indigo-400 mb-5 tracking-[4px]">Summary</h4>
                         <p className="text-slate-200 italic font-medium leading-relaxed text-base mb-6">"{result.summary}"</p>
