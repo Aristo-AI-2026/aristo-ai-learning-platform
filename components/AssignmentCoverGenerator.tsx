@@ -59,7 +59,7 @@ const AssignmentCoverGenerator: React.FC = () => {
   };
 
   const handleExportPDF = () => {
-    // Robust mobile-friendly printing using hidden iframe
+    // Generate the student fields list
     const studentFields = [
       { label: 'Name', value: formData.studentName },
       { label: 'Roll', value: formData.studentRoll },
@@ -72,11 +72,14 @@ const AssignmentCoverGenerator: React.FC = () => {
     ].filter(f => f.value.trim() !== '');
 
     const htmlContent = `
+      <!DOCTYPE html>
       <html>
         <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>Assignment Cover - ${formData.topic}</title>
           <style>
-            @import url('https://fonts.googleapis.com/css2?family=Times+New+Roman&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
             @page { size: A4; margin: 0mm; }
             * { box-sizing: border-box; -webkit-print-color-adjust: exact; }
             body { 
@@ -112,6 +115,9 @@ const AssignmentCoverGenerator: React.FC = () => {
             .student-label { width: 85px; flex-shrink: 0; }
             .student-colon { width: 15px; text-align: center; flex-shrink: 0; }
             .student-value { flex: 1; }
+            @media print {
+              .no-print { display: none; }
+            }
           </style>
         </head>
         <body>
@@ -149,30 +155,27 @@ const AssignmentCoverGenerator: React.FC = () => {
           </div>
           <script>
             window.onload = function() {
-              window.print();
-              setTimeout(() => { window.parent.document.getElementById('print-iframe').remove(); }, 1000);
+              setTimeout(function() {
+                window.print();
+              }, 500);
             };
           </script>
         </body>
       </html>
     `;
 
-    // Create a hidden iframe for printing
-    const iframe = document.createElement('iframe');
-    iframe.id = 'print-iframe';
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = 'none';
-    document.body.appendChild(iframe);
+    // MOBILE-STABLE METHOD: Blob URL approach
+    // This creates a static file in the browser's memory, which doesn't crash on mobile.
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, '_blank');
     
-    const doc = iframe.contentWindow?.document || iframe.contentDocument;
-    if (doc) {
-      doc.open();
-      doc.write(htmlContent);
-      doc.close();
+    // Fallback if window.open is blocked
+    if (!win) {
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.click();
     }
   };
 
@@ -195,7 +198,7 @@ const AssignmentCoverGenerator: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
         {/* Form Side */}
-        <div className="glass p-8 rounded-[40px] border-white/5 space-y-6 bg-slate-900/40">
+        <div className="glass p-8 rounded-[40px] border-white/5 space-y-6 bg-slate-900/40 shadow-2xl">
           
           <div className="space-y-4">
             <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-[4px]">University Logo</h4>
@@ -322,17 +325,28 @@ const AssignmentCoverGenerator: React.FC = () => {
           </div>
 
           <motion.button 
-            whileHover={{ scale: 1.02, boxShadow: "0 0 30px rgba(37, 99, 235, 0.4)" }}
+            whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={handleExportPDF}
-            className="group relative w-full py-5 overflow-hidden rounded-2xl font-black text-lg bg-slate-900 border border-blue-500/50 text-white shadow-2xl transition-all"
+            className="relative w-full group overflow-hidden rounded-[30px] p-[2px] shadow-2xl transition-all"
           >
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 opacity-80 group-hover:opacity-100 transition-opacity" />
-            <div className="relative flex items-center justify-center gap-4 uppercase tracking-[4px]">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="animate-bounce-slow">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-              Generate A4 PDF
+            {/* Animated Glow Border */}
+            <div className="absolute inset-[-100%] bg-[conic-gradient(from_90deg_at_50%_50%,#3b82f6_0%,#818cf8_50%,#3b82f6_100%)] animate-[spin_4s_linear_infinite] group-hover:animate-[spin_2s_linear_infinite]" />
+            
+            <div className="relative h-full w-full rounded-[28px] bg-slate-900 py-6 flex items-center justify-center gap-4">
+              <div className="absolute inset-0 bg-blue-600/10 group-hover:bg-blue-600/20 transition-colors" />
+              
+              <div className="relative flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                </div>
+                <span className="font-black text-xl md:text-2xl uppercase tracking-[3px] text-white">Generate A4 PDF</span>
+              </div>
+              
+              {/* Particle Effects (Hidden by default, shown on hover via shadow) */}
+              <div className="absolute -inset-1 rounded-[30px] opacity-0 group-hover:opacity-40 blur-xl bg-blue-500 transition-opacity" />
             </div>
           </motion.button>
         </div>
