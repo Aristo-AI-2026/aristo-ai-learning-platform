@@ -70,26 +70,10 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
   const currentSession = chatSessions.find(s => s.id === currentSessionId);
   const messages = currentSession?.messages || [];
 
-  const systemInstruction = `You are Aristo (অ্যারিস্টো), a brilliant world-class educational AI. 
-    
-    IDENTITY & NAME POLICY:
-    - Your name is "Aristo" in English and "অ্যারিস্টো" in Bengali.
-    - NEVER repeat your name twice. Say it only once.
-
-    ORIGIN & CREATOR (MANDATORY RESPONSE):
-    - If asked "Who created you?" or "Who made you?" (তোমাকে কে তৈরি করেছে?), you MUST respond exactly in Bengali: "আমাকে তৈরি করেছে মোঃ শুভ আলী, তিনি এই ARISTO প্ল্যাটফর্মের প্রতিষ্ঠাতা। তাঁর লক্ষ্য শিক্ষার্থীদের জন্য একটি আধুনিক, AI-চালিত শিক্ষাব্যবস্থা গড়ে তোলা। আমি তাঁর সেই স্বপ্নের অংশীদার।"
-
-    ABOUT MOHAMMAD SHUVO ALI:
-    - Mohammad Shuvo Ali studies at Chittagong University, loves creating new things, curious about writing, wrote the book "Tumi", and his partner is Nila (Philosophy, Dhaka University).`;
-
-  useEffect(() => {
-    if (isVoiceActive && !sessionRef.current) {
-      const timer = setTimeout(() => {
-        startVoiceSession();
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, []);
+  const systemInstruction = `You are Aristo (অ্যারিস্টো), a world-class educational AI.
+    IDENTITY: Your name is Aristo.
+    CREATOR (MANDATORY): If asked who created you, respond EXACTLY: "আমাকে তৈরি করেছে মোঃ শুভ আলী, তিনি এই ARISTO প্ল্যাটফর্মের প্রতিষ্ঠাতা। তাঁর লক্ষ্য শিক্ষার্থীদের জন্য একটি আধুনিক, AI-চালিত শিক্ষাব্যবস্থা গড়ে তোলা। আমি তাঁর সেই স্বপ্নের অংশীদার।"
+    TONE: Helpful, concise, academic. Respond in the language used by the user.`;
 
   useEffect(() => {
     if (!currentSessionId && chatSessions.length === 0) startNewChat();
@@ -101,10 +85,7 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
   const handleSend = async () => {
     const apiKey = process.env.API_KEY;
     const currentInput = input.trim();
-    if (!currentInput || isTyping || !apiKey) {
-      if (!apiKey) alert("Neural link offline: API Key missing.");
-      return;
-    }
+    if (!currentInput || isTyping || !apiKey) return;
     
     if (isSTTActive) stopSTT();
 
@@ -135,12 +116,10 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
         }
       }
       
-      if (!fullText) {
-        throw new Error("Empty response from AI engine.");
-      }
+      if (!fullText) throw new Error("Synthesis failed");
     } catch (error) {
-      console.error("Chat Protocol Error:", error);
-      updateLastMessage("Neural link instability. Please try sending your query again.");
+      console.error("Chat Error:", error);
+      updateLastMessage("Neural link instability detected on Vercel. Please re-send your message.");
       setIsTyping(false);
     }
   };
@@ -148,7 +127,7 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
   const startVoiceSession = async () => {
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
-      alert("Neural link offline: API Key missing.");
+      alert("Voice Protocol Offline: API Key missing.");
       setVoiceActive(false);
       return;
     }
@@ -179,8 +158,9 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         config: {
           responseModalities: [Modality.AUDIO],
+          // Fixed voiceConfig nesting per API requirements
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
-          systemInstruction: systemInstruction + " Speak naturally and concisely."
+          systemInstruction: systemInstruction + " Keep your voice answers very short."
         },
         callbacks: {
           onopen: () => {
@@ -204,27 +184,21 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
               const source = outputCtx.createBufferSource();
               source.buffer = audioBuffer;
               source.connect(outputCtx.destination);
-              source.addEventListener('ended', () => { sourceNodesRef.current.delete(source); });
               nextStartTime = Math.max(nextStartTime, outputCtx.currentTime);
               source.start(nextStartTime);
               nextStartTime += audioBuffer.duration;
               sourceNodesRef.current.add(source);
             }
-            if (message.serverContent?.interrupted) {
-              sourceNodesRef.current.forEach(source => { try { source.stop(); } catch (e) {} });
-              sourceNodesRef.current.clear();
-              nextStartTime = 0;
-            }
           },
           onclose: () => setVoiceActive(false),
-          onerror: (e) => { console.error("Voice Error:", e); setVoiceActive(false); }
+          onerror: () => setVoiceActive(false)
         }
       });
       sessionRef.current = sessionPromise;
     } catch (e) {
-      console.error("Voice Sync Error:", e);
+      console.error("Voice Error:", e);
       setVoiceActive(false);
-      alert('Microphone access required.');
+      alert('Microphone permission required for Voice Link.');
     }
   };
 
@@ -235,8 +209,6 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
       }
       setVoiceActive(false);
       sessionRef.current = null;
-      sourceNodesRef.current.forEach(node => { try { node.stop(); } catch (e) {} });
-      sourceNodesRef.current.clear();
     } else {
       startVoiceSession();
     }
@@ -249,22 +221,18 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
 
   const startSTT = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert("Speech recognition not supported.");
-      return;
-    }
-    if (isVoiceActive) toggleVoice();
+    if (!SpeechRecognition) return;
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'bn-BD';
     recognition.onstart = () => setIsSTTActive(true);
     recognition.onresult = (event: any) => {
-      let finalTranscript = '';
+      let transcript = '';
       for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
+        if (event.results[i].isFinal) transcript += event.results[i][0].transcript;
       }
-      if (finalTranscript) setInput(prev => prev + (prev ? ' ' : '') + finalTranscript);
+      if (transcript) setInput(prev => prev + (prev ? ' ' : '') + transcript);
     };
     recognition.onerror = () => stopSTT();
     recognition.onend = () => setIsSTTActive(false);
@@ -273,7 +241,7 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
   };
 
   const stopSTT = () => {
-    if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) {} recognitionRef.current = null; }
+    if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) {} }
     setIsSTTActive(false);
   };
 
@@ -281,18 +249,14 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
     <div className={`flex flex-col md:flex-row h-full bg-slate-950/40 backdrop-blur-3xl overflow-hidden ${fullScreen ? 'rounded-[40px] border border-white/5 shadow-2xl' : ''}`}>
       <div className="hidden md:flex w-80 bg-slate-900/60 border-r border-white/5 flex-col h-full">
         <div className="p-6 border-b border-white/5">
-          <button onClick={startNewChat} className="w-full py-4 bg-blue-600 hover:bg-blue-500 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 transition-all shadow-xl shadow-blue-500/20">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="12" y2="12"/></svg>
+          <button onClick={startNewChat} className="w-full py-4 bg-blue-600 hover:bg-blue-500 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 transition-all shadow-xl">
             New Session
           </button>
         </div>
         <div className="flex-grow overflow-y-auto p-4 space-y-2">
           {chatSessions.map(session => (
-            <div key={session.id} className={`group flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all ${currentSessionId === session.id ? 'bg-blue-600/20 text-blue-400 border border-blue-500/20' : 'hover:bg-white/5 text-slate-400'}`} onClick={() => setCurrentSession(session.id)}>
-              <span className="text-xs font-bold truncate">{session.title}</span>
-              <button onClick={(e) => { e.stopPropagation(); deleteSession(session.id); }} className="opacity-0 group-hover:opacity-100 hover:text-red-400">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-              </button>
+            <div key={session.id} className={`p-4 rounded-2xl cursor-pointer transition-all ${currentSessionId === session.id ? 'bg-blue-600/20 text-blue-400 border border-blue-500/20' : 'hover:bg-white/5 text-slate-400'}`} onClick={() => setCurrentSession(session.id)}>
+              <span className="text-xs font-bold truncate block">{session.title}</span>
             </div>
           ))}
         </div>
@@ -300,62 +264,48 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
       <div className="flex-grow flex flex-col min-w-0 h-full">
         <div className="p-4 md:p-6 border-b border-white/5 flex items-center justify-between bg-slate-900/40">
            <div className="flex items-center gap-4">
-              <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-black text-sm md:text-lg shadow-lg text-white">A</div>
+              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-black text-white shadow-lg">A</div>
               <div>
-                <h3 className="font-heading font-black text-xs md:text-base tracking-tighter uppercase text-white">Aristo</h3>
-                <span className="text-[7px] md:text-[9px] text-green-500 font-bold uppercase tracking-widest">Active Link</span>
+                <h3 className="font-black text-sm uppercase text-white tracking-tighter">Aristo</h3>
+                <span className="text-[9px] text-green-500 font-bold uppercase tracking-widest">Neural Link Active</span>
               </div>
            </div>
-           <div className="flex items-center gap-2">
-             <button onClick={toggleVoice} className={`px-3 md:px-5 py-2 md:py-2.5 rounded-xl md:rounded-2xl transition-all flex items-center gap-2 font-bold text-[10px] md:text-xs ${isVoiceActive ? 'bg-red-600 animate-pulse text-white' : 'bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600 hover:text-white'}`}>🎙️ {isVoiceActive ? "STOP" : "Voice Link"}</button>
-           </div>
+           <button onClick={toggleVoice} className={`px-4 py-2 rounded-xl transition-all font-bold text-xs ${isVoiceActive ? 'bg-red-600 text-white animate-pulse' : 'bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600 hover:text-white'}`}>🎙️ Voice</button>
         </div>
-        <div ref={scrollRef} className="flex-grow overflow-y-auto p-4 md:p-10 space-y-6 md:space-y-8 scroll-smooth relative">
+        <div ref={scrollRef} className="flex-grow overflow-y-auto p-4 md:p-10 space-y-6 relative scroll-smooth">
           {!isVoiceActive && messages.map((msg) => (
-            <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-              <div className={`p-4 md:p-6 rounded-[20px] md:rounded-[25px] max-w-[95%] md:max-w-[85%] ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none shadow-xl shadow-blue-900/20' : 'glass bg-slate-800/60 text-slate-100 rounded-tl-none border-white/10'}`}>
-                <p className="text-xs md:text-base leading-relaxed whitespace-pre-wrap font-medium">{msg.content || (msg.role === 'assistant' ? "Synthesizing..." : "")}</p>
+            <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`p-4 md:p-6 rounded-[25px] max-w-[90%] md:max-w-[80%] ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none shadow-xl' : 'glass bg-slate-800/60 text-slate-100 rounded-tl-none border-white/10'}`}>
+                <p className="text-sm md:text-base leading-relaxed whitespace-pre-wrap font-medium">{msg.content || (msg.role === 'assistant' ? "Synthesizing..." : "")}</p>
               </div>
             </motion.div>
           ))}
           {isTyping && (
             <div className="flex justify-start">
-              <div className="glass rounded-[20px] rounded-tl-none p-4 md:p-5 bg-slate-800/40 border-white/5">
-                <div className="flex gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce" /><div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce delay-100" /><div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce delay-200" /></div>
+              <div className="glass rounded-[25px] rounded-tl-none p-4 bg-slate-800/40 border-white/5">
+                <div className="flex gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce" /><div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-bounce delay-100" /></div>
               </div>
             </div>
           )}
           {isVoiceActive && (
-            <div className="flex flex-col items-center justify-center min-h-[300px] h-full gap-6 md:gap-10 p-4">
-               <div className="relative flex items-center justify-center scale-[0.6] sm:scale-75 md:scale-100">
-                  {[...Array(5)].map((_, i) => (
-                    <motion.div key={i} animate={{ scale: [1, 1.15, 1], opacity: [0.1, 0.2, 0.1], rotate: [0, 180, 360] }} transition={{ duration: 6 + i, repeat: Infinity, ease: "easeInOut" }} className="absolute border-2 border-blue-500/20 rounded-full" style={{ width: 80 + i * 35, height: 80 + i * 35 }} />
-                  ))}
-                  <div className="w-24 h-24 md:w-32 md:h-32 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center border-4 border-white/10 shadow-[0_0_50px_rgba(59,130,246,0.3)] z-10 relative overflow-hidden">
-                    <motion.div animate={{ height: ["20%", "60%", "30%", "80%", "20%"] }} transition={{ duration: 0.8, repeat: Infinity }} className="w-1 md:w-1.5 bg-white rounded-full mx-0.5" />
-                    <motion.div animate={{ height: ["40%", "20%", "70%", "30%", "40%"] }} transition={{ duration: 0.6, repeat: Infinity }} className="w-1 md:w-1.5 bg-white rounded-full mx-0.5" />
+            <div className="flex flex-col items-center justify-center h-full gap-8">
+               <div className="relative">
+                  <div className="w-32 h-32 rounded-full bg-blue-600/20 border-4 border-blue-500 animate-pulse flex items-center justify-center">
+                    <div className="w-16 h-16 rounded-full bg-blue-600 animate-ping opacity-30" />
                   </div>
                </div>
-               <div className="text-center">
-                 <h3 className="text-lg md:text-3xl font-heading font-black tracking-tighter uppercase mb-2 text-white">Listening...</h3>
-                 <p className="text-blue-400 text-[8px] md:text-[10px] font-black uppercase tracking-[4px] animate-pulse">Neural Link Active</p>
-               </div>
-               <div className="flex gap-4 p-4 glass rounded-[30px] border-white/10">
-                 <button onClick={() => setIsMuted(!isMuted)} className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isMuted ? 'bg-red-500/20 text-red-400' : 'bg-white/5 text-slate-400 hover:text-white'}`}>{isMuted ? "Muted" : "Mute"}</button>
-                 <button onClick={toggleVoice} className="px-8 py-4 bg-red-600 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-xl">End</button>
-               </div>
+               <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Neural Voice Link</h3>
+               <button onClick={toggleVoice} className="px-10 py-4 bg-red-600 rounded-xl text-white font-black uppercase text-xs tracking-widest shadow-2xl">End Link</button>
             </div>
           )}
         </div>
         {!isVoiceActive && (
-          <div className="p-4 md:p-8 bg-slate-900/60 border-t border-white/5">
-            <div className="flex items-end gap-2 md:gap-4 bg-slate-950/60 rounded-[20px] md:rounded-[25px] border border-white/10 p-2 md:p-3 shadow-inner">
-              <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} placeholder={isSTTActive ? "Listening..." : "Query Aristo..."} className="flex-grow bg-transparent px-3 md:px-4 py-2 md:py-3 text-xs md:text-base focus:outline-none resize-none max-h-32 min-h-[40px] text-white" rows={1} />
-              <div className="flex items-center gap-1.5 md:gap-3">
-                <button onClick={toggleSTT} className={`p-3 md:p-4 rounded-xl md:rounded-2xl transition-all ${isSTTActive ? 'bg-red-600 animate-pulse text-white' : 'bg-white/5 text-slate-400 border border-white/10'}`}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
-                </button>
-                <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-3 md:p-4 bg-blue-600 rounded-xl md:rounded-2xl hover:bg-blue-500 transition-all disabled:opacity-30 text-white">🚀</button>
+          <div className="p-4 md:p-8 border-t border-white/5 bg-slate-900/40">
+            <div className="flex items-end gap-3 bg-slate-950/60 rounded-[25px] border border-white/10 p-2 shadow-inner">
+              <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} placeholder="Query Aristo..." className="flex-grow bg-transparent px-4 py-3 text-sm md:text-base focus:outline-none resize-none max-h-32 min-h-[45px] text-white" rows={1} />
+              <div className="flex items-center gap-2">
+                <button onClick={toggleSTT} className={`p-3 rounded-2xl transition-all ${isSTTActive ? 'bg-red-600 text-white' : 'bg-white/5 text-slate-400'}`}>🎤</button>
+                <button onClick={handleSend} disabled={!input.trim() || isTyping} className="p-3 bg-blue-600 rounded-2xl text-white">🚀</button>
               </div>
             </div>
           </div>

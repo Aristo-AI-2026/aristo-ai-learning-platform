@@ -36,22 +36,26 @@ const AIConceptExplainer: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, []);
 
-  const safeJSONParse = (text: string) => {
+  // Extremely robust JSON extractor to handle any malformed or decorated AI responses
+  const extractJSON = (text: string) => {
+    if (!text) throw new Error("Empty response");
     try {
-      // Direct parse
-      return JSON.parse(text);
+      // Step 1: Try direct parse
+      const cleaned = text.trim().replace(/^```json/, '').replace(/```$/, '').trim();
+      return JSON.parse(cleaned);
     } catch (e) {
-      // Extract from markdown or surrounding text
-      const start = text.indexOf('{');
-      const end = text.lastIndexOf('}');
-      if (start !== -1 && end !== -1) {
+      // Step 2: Search for the JSON object manually
+      const firstBrace = text.indexOf('{');
+      const lastBrace = text.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1) {
         try {
-          return JSON.parse(text.substring(start, end + 1));
+          const substring = text.substring(firstBrace, lastBrace + 1);
+          return JSON.parse(substring);
         } catch (innerE) {
-          throw new Error("Invalid structure returned from AI");
+          throw new Error("Could not extract valid JSON from response");
         }
       }
-      throw new Error("No readable data found");
+      throw new Error("No JSON structure detected in response");
     }
   };
 
@@ -69,7 +73,7 @@ const AIConceptExplainer: React.FC = () => {
 
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
-      alert("Neural Link Offline: API Key Missing.");
+      alert("Neural Link Offline: API Key missing in environment.");
       setIsGenerating(false);
       return;
     }
@@ -78,20 +82,20 @@ const AIConceptExplainer: React.FC = () => {
       const ai = new GoogleGenAI({ apiKey });
 
       const systemInstruction = `You are a core part of ARISTO AI Educational Platform.
-IDENTITY & CREATOR: If asked who created you, respond in Bengali: "আমাকে তৈরি করেছে মোঃ শুভ আলী, তিনি এই ARISTO প্ল্যাটফর্মের প্রতিষ্ঠাতা। তাঁর লক্ষ্য শিক্ষার্থীদের জন্য একটি আধুনিক, AI-চালিত শিক্ষাব্যবস্থা গড়ে তোলা। আমি তাঁর সেই স্বপ্নের অংশীদার।"
+IDENTITY & CREATOR: If asked who created you, respond ONLY in Bengali: "আমাকে তৈরি করেছে মোঃ শুভ আলী, তিনি এই ARISTO প্ল্যাটফর্মের প্রতিষ্ঠাতা। তাঁর লক্ষ্য শিক্ষার্থীদের জন্য একটি আধুনিক, AI-চালিত শিক্ষাব্যবস্থা গড়ে তোলা। আমি তাঁর সেই স্বপ্নের অংশীদার।"
 Topic: ${currentTopic}
 Language: ${language}
 Selected Mode: ${mode === 'UNDERSTANDING' ? 'Explain for Understanding' : 'Write as Exam Answer'}
 
 RULES:
-- Respond ONLY with valid JSON.
-- Every heading MUST be bilingual (e.g., ভূমিকা | Introduction).
-- If Explain mode: Friendly, simple language, 700-1000 words.
-- If Exam mode: Academic, formal, structured paragraphs, 1200-1500 words.`;
+- Respond ONLY with valid JSON. Do not include extra text.
+- Headings MUST be bilingual (e.g., ভূমিকা | Introduction).
+- If Explain mode: 700-1000 words, friendly tone.
+- If Exam mode: 1200-1500 words, formal academic tone.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: [{ parts: [{ text: `Generate a full ${mode === 'EXAM' ? 'exam answer' : 'friendly explanation'} for: "${currentTopic}" in ${language}. Ensure the length requirements are strictly met.` }] }],
+        contents: [{ parts: [{ text: `Provide a comprehensive ${mode === 'EXAM' ? 'university exam answer' : 'lesson'} on "${currentTopic}" in ${language}. Ensure the content is deep and thorough.` }] }],
         config: {
           systemInstruction,
           responseMimeType: 'application/json',
@@ -119,12 +123,12 @@ RULES:
         }
       });
 
-      const data = safeJSONParse(response.text || '');
+      const data = extractJSON(response.text || '');
       setResult(data);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error) {
-      console.error("AI Generation Error:", error);
-      alert("Neural sync instability. Please refine your topic and try again.");
+      console.error("Critical AI Error:", error);
+      alert("Neural sync instability detected on Vercel. Please refine your topic or re-sync your connection.");
     } finally {
       setIsGenerating(false);
     }
@@ -196,7 +200,7 @@ RULES:
       <AnimatePresence>
         {saveSuccess && (
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="fixed top-10 left-1/2 -translate-x-1/2 z-[200] bg-slate-900 border border-green-500/30 px-6 py-3 rounded-full text-green-400 font-bold text-xs shadow-2xl">
-            Success: Saved to Records
+            Success: Academic Data Synchronized
           </motion.div>
         )}
       </AnimatePresence>
@@ -230,12 +234,12 @@ RULES:
                 defaultValue={topic}
                 onChange={(e) => setTopic(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') generateContent('UNDERSTANDING'); }}
-                placeholder="টপিকটি লিখুন..."
+                placeholder="যেমন: ডিমান্ড অ্যান্ড সাপ্লাই"
                 className="w-full bg-slate-950/50 border border-white/10 rounded-2xl px-5 py-4 text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/60 transition-all placeholder:text-slate-800 text-sm"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 pt-2">
               <motion.button 
                 whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                 onClick={() => generateContent('UNDERSTANDING')} 
@@ -266,8 +270,8 @@ RULES:
                 <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center mb-6 text-slate-700">
                   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
                 </div>
-                <h2 className="text-xl font-black text-slate-500 uppercase tracking-tighter">Academic Hub Ready</h2>
-                <p className="text-slate-600 text-[9px] font-black uppercase tracking-widest mt-2">Enter topic and choose mode to begin synthesis</p>
+                <h2 className="text-xl font-black text-slate-500 uppercase tracking-tighter">Academic Synthesis Ready</h2>
+                <p className="text-slate-600 text-[9px] font-black uppercase tracking-widest mt-2">Enter topic to begin orchestration</p>
               </motion.div>
             )}
 
