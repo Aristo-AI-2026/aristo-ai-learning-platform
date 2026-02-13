@@ -10,7 +10,6 @@ const AssignmentCoverGenerator: React.FC = () => {
   
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
-  // Define initial default values to check against for auto-clearing
   const INITIAL_VALUES = {
     university: user?.institution || 'University Name',
     department: user?.department || 'Department Name',
@@ -52,22 +51,15 @@ const AssignmentCoverGenerator: React.FC = () => {
     setFormData(prev => ({ ...prev, [name]: value }));
   }, []);
 
-  // Generic focus handler to clear default text automatically when user starts typing
   const handleInputFocus = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    // If the current value matches the initial placeholder value, clear it for the user
     if (value === (INITIAL_VALUES as any)[name]) {
       setFormData(prev => ({ ...prev, [name]: '' }));
     }
   };
 
   const handleExportPDF = () => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert("Please allow pop-ups to download the PDF.");
-      return;
-    }
-
+    // Robust mobile-friendly printing using hidden iframe
     const studentFields = [
       { label: 'Name', value: formData.studentName },
       { label: 'Roll', value: formData.studentRoll },
@@ -79,145 +71,47 @@ const AssignmentCoverGenerator: React.FC = () => {
       { label: 'Session', value: formData.studentSession },
     ].filter(f => f.value.trim() !== '');
 
-    printWindow.document.write(`
+    const htmlContent = `
       <html>
         <head>
           <title>Assignment Cover - ${formData.topic}</title>
           <style>
             @import url('https://fonts.googleapis.com/css2?family=Times+New+Roman&display=swap');
-            
-            @page {
-              size: A4;
-              margin: 0mm; /* Removes browser headers and footers */
-            }
-
+            @page { size: A4; margin: 0mm; }
             * { box-sizing: border-box; -webkit-print-color-adjust: exact; }
-
             body { 
               font-family: "Times New Roman", Times, serif; 
-              padding: 0;
-              margin: 0mm;
-              color: black; 
-              background: white;
-              overflow: hidden;
+              padding: 0; margin: 0mm; color: black; background: white;
             }
-
             .page-container {
-              width: 210mm;
-              height: 297mm;
-              margin: 0 auto;
-              /* 1 inch (25.4mm) top margin for logo and content */
+              width: 210mm; height: 297mm; margin: 0 auto;
               padding: 1in 20mm 15mm 20mm;
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              position: relative;
+              display: flex; flex-direction: column; align-items: center; position: relative;
             }
-
             .logo-wrapper {
-              height: 140px;
-              width: 100%;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              margin-bottom: 15px;
+              height: 140px; width: 100%; display: flex; align-items: center; justify-content: center; margin-bottom: 15px;
             }
-
-            .logo {
-              max-height: 140px;
-              max-width: 280px;
-              object-fit: contain;
-            }
-
-            h1.univ {
-              font-size: 28pt;
-              font-weight: bold;
-              margin: 0;
-              text-align: center;
-              line-height: 1.1;
-              text-transform: uppercase;
-              white-space: nowrap;
-              width: 100%;
-            }
-
-            h2.dept {
-              font-size: 34pt;
-              font-weight: bold;
-              margin: 10px 0 15px 0;
-              text-align: center;
-              line-height: 1.1;
-            }
-
-            h3.assignment-header {
-              font-size: 26pt;
-              font-weight: bold;
-              text-decoration: underline;
-              margin: 25px 0 20px 0;
-              text-align: center;
-              text-transform: uppercase;
-            }
-
-            .info-grid {
-              width: 100%;
-              max-width: 620px;
-              margin-bottom: 10px;
-              font-size: 14pt;
-              font-weight: bold;
-              margin-top: 10px;
-            }
-
-            .info-row {
-              display: flex;
-              margin-bottom: 10px;
-              align-items: flex-start;
-            }
-
+            .logo { max-height: 140px; max-width: 280px; object-fit: contain; }
+            h1.univ { font-size: 28pt; font-weight: bold; margin: 0; text-align: center; line-height: 1.1; text-transform: uppercase; width: 100%; }
+            h2.dept { font-size: 34pt; font-weight: bold; margin: 10px 0 15px 0; text-align: center; line-height: 1.1; }
+            h3.assignment-header { font-size: 26pt; font-weight: bold; text-decoration: underline; margin: 25px 0 20px 0; text-align: center; text-transform: uppercase; }
+            .info-grid { width: 100%; max-width: 620px; margin-bottom: 10px; font-size: 14pt; font-weight: bold; margin-top: 10px; }
+            .info-row { display: flex; margin-bottom: 10px; align-items: flex-start; }
             .info-label { width: 170px; flex-shrink: 0; }
             .info-colon { width: 35px; text-align: center; flex-shrink: 0; }
             .info-value { flex: 1; }
-
             .submission-boxes {
-              display: flex;
-              width: 100%;
-              border: 1.5px solid black;
-              min-height: 220px;
-              /* Moved down by 0.5 inch (12.7mm) as requested */
-              margin-top: 0.5in;
-              margin-bottom: auto;
+              display: flex; width: 100%; border: 1.5px solid black; min-height: 220px;
+              margin-top: 0.5in; margin-bottom: auto;
             }
-
-            .box {
-              flex: 1;
-              padding: 22px;
-              display: flex;
-              flex-direction: column;
-            }
-
+            .box { flex: 1; padding: 22px; display: flex; flex-direction: column; }
             .box-left { border-right: 1.5px solid black; }
-
-            .box-header {
-              text-align: center;
-              font-size: 15pt;
-              font-weight: bold;
-              text-decoration: underline;
-              margin-bottom: 15px;
-            }
-
-            .box-content {
-              font-size: 12.5pt;
-              font-weight: bold;
-              line-height: 1.5;
-            }
-
+            .box-header { text-align: center; font-size: 15pt; font-weight: bold; text-decoration: underline; margin-bottom: 15px; }
+            .box-content { font-size: 12.5pt; font-weight: bold; line-height: 1.5; }
             .student-info-row { display: flex; margin-bottom: 4px; }
             .student-label { width: 85px; flex-shrink: 0; }
             .student-colon { width: 15px; text-align: center; flex-shrink: 0; }
             .student-value { flex: 1; }
-
-            @media print {
-              body { background: none; }
-              .page-container { margin: 0; border: none; }
-            }
           </style>
         </head>
         <body>
@@ -225,39 +119,15 @@ const AssignmentCoverGenerator: React.FC = () => {
             <div class="logo-wrapper">
               ${logoUrl ? `<img src="${logoUrl}" class="logo" />` : `<div style="height: 140px;"></div>`}
             </div>
-            
             <h1 class="univ">${formData.university}</h1>
             <h2 class="dept">${formData.department}</h2>
-            
             <h3 class="assignment-header">${formData.assignmentType}</h3>
-            
             <div class="info-grid">
-              ${formData.courseNo ? `
-              <div class="info-row">
-                <div class="info-label">Course No</div>
-                <div class="info-colon">:</div>
-                <div class="info-value">${formData.courseNo}</div>
-              </div>` : ''}
-              ${formData.courseName ? `
-              <div class="info-row">
-                <div class="info-label">Course Name</div>
-                <div class="info-colon">:</div>
-                <div class="info-value">${formData.courseName}</div>
-              </div>` : ''}
-              ${formData.topic ? `
-              <div class="info-row">
-                <div class="info-label">Assignment Topic</div>
-                <div class="info-colon">:</div>
-                <div class="info-value">${formData.topic}</div>
-              </div>` : ''}
-              ${formData.submissionDate ? `
-              <div class="info-row">
-                <div class="info-label">Submission Date</div>
-                <div class="info-colon">:</div>
-                <div class="info-value">${formData.submissionDate}</div>
-              </div>` : ''}
+              ${formData.courseNo ? `<div class="info-row"><div class="info-label">Course No</div><div class="info-colon">:</div><div class="info-value">${formData.courseNo}</div></div>` : ''}
+              ${formData.courseName ? `<div class="info-row"><div class="info-label">Course Name</div><div class="info-colon">:</div><div class="info-value">${formData.courseName}</div></div>` : ''}
+              ${formData.topic ? `<div class="info-row"><div class="info-label">Assignment Topic</div><div class="info-colon">:</div><div class="info-value">${formData.topic}</div></div>` : ''}
+              ${formData.submissionDate ? `<div class="info-row"><div class="info-label">Submission Date</div><div class="info-colon">:</div><div class="info-value">${formData.submissionDate}</div></div>` : ''}
             </div>
-            
             <div class="submission-boxes">
               <div class="box box-left">
                 <div class="box-header">Submitted To:</div>
@@ -271,33 +141,39 @@ const AssignmentCoverGenerator: React.FC = () => {
               <div class="box">
                 <div class="box-header">Submitted By:</div>
                 <div class="box-content">
-                  ${studentFields.map(field => `
-                    <div class="student-info-row">
-                      <div class="student-label">${field.label}</div>
-                      <div class="student-colon">:</div>
-                      <div class="student-value">${field.value}</div>
-                    </div>
-                  `).join('')}
-                  ${formData.additionalInfo ? `
-                    <div class="student-info-row" style="margin-top: 8px; border-top: 1.2px dashed #000; padding-top: 5px;">
-                      <div class="student-value">${formData.additionalInfo}</div>
-                    </div>
-                  ` : ''}
+                  ${studentFields.map(field => `<div class="student-info-row"><div class="student-label">${field.label}</div><div class="student-colon">:</div><div class="student-value">${field.value}</div></div>`).join('')}
+                  ${formData.additionalInfo ? `<div class="student-info-row" style="margin-top: 8px; border-top: 1.2px dashed #000; padding-top: 5px;"><div class="student-value">${formData.additionalInfo}</div></div>` : ''}
                 </div>
               </div>
             </div>
           </div>
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(() => { window.parent.document.getElementById('print-iframe').remove(); }, 1000);
+            };
+          </script>
         </body>
       </html>
-    `);
+    `;
 
-    printWindow.document.close();
-    printWindow.focus();
+    // Create a hidden iframe for printing
+    const iframe = document.createElement('iframe');
+    iframe.id = 'print-iframe';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
     
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 1500);
+    const doc = iframe.contentWindow?.document || iframe.contentDocument;
+    if (doc) {
+      doc.open();
+      doc.write(htmlContent);
+      doc.close();
+    }
   };
 
   return (
@@ -446,13 +322,18 @@ const AssignmentCoverGenerator: React.FC = () => {
           </div>
 
           <motion.button 
-            whileHover={{ scale: 1.02 }}
+            whileHover={{ scale: 1.02, boxShadow: "0 0 30px rgba(37, 99, 235, 0.4)" }}
             whileTap={{ scale: 0.98 }}
             onClick={handleExportPDF}
-            className="w-full py-5 bg-blue-600 rounded-2xl font-black text-lg shadow-2xl shadow-blue-500/20 hover:bg-blue-500 transition-all uppercase tracking-[6px] text-white flex items-center justify-center gap-4 mt-6"
+            className="group relative w-full py-5 overflow-hidden rounded-2xl font-black text-lg bg-slate-900 border border-blue-500/50 text-white shadow-2xl transition-all"
           >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Export to A4 PDF
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 opacity-80 group-hover:opacity-100 transition-opacity" />
+            <div className="relative flex items-center justify-center gap-4 uppercase tracking-[4px]">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="animate-bounce-slow">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Generate A4 PDF
+            </div>
           </motion.button>
         </div>
 
