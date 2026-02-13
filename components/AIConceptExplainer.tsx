@@ -36,6 +36,27 @@ const AIConceptExplainer: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, []);
 
+  // Robust JSON extractor to handle cases where AI might include extra text or markdown blocks
+  const extractJSON = (text: string) => {
+    try {
+      // Remove potential markdown code blocks
+      const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      return JSON.parse(cleaned);
+    } catch (e) {
+      // Find the first { and last } to isolate JSON
+      const start = text.indexOf('{');
+      const end = text.lastIndexOf('}');
+      if (start !== -1 && end !== -1) {
+        try {
+          return JSON.parse(text.substring(start, end + 1));
+        } catch (innerE) {
+          throw new Error("Invalid JSON structure");
+        }
+      }
+      throw new Error("No JSON found");
+    }
+  };
+
   const generateContent = async (mode: ExplainerMode) => {
     const currentTopic = topicInputRef.current?.value.trim() || topic.trim();
     
@@ -58,7 +79,7 @@ const AIConceptExplainer: React.FC = () => {
     const ai = new GoogleGenAI({ apiKey });
 
     const systemInstruction = `You are a core part of ARISTO AI Educational Platform.
-You must strictly follow the selected mode instructions. Word counts and tone are mandatory.
+IDENTITY & CREATOR: If asked who created you, respond in Bengali: "আমাকে তৈরি করেছে মোঃ শুভ আলী, তিনি এই ARISTO প্ল্যাটফর্মের প্রতিষ্ঠাতা। তাঁর লক্ষ্য শিক্ষার্থীদের জন্য একটি আধুনিক, AI-চালিত শিক্ষাব্যবস্থা গড়ে তোলা। আমি তাঁর সেই স্বপ্নের অংশীদার।"
 Topic: ${currentTopic}
 Language: ${language}
 Selected Mode: ${mode === 'UNDERSTANDING' ? 'Explain for Understanding' : 'Write as Exam Answer'}
@@ -66,49 +87,37 @@ Selected Mode: ${mode === 'UNDERSTANDING' ? 'Explain for Understanding' : 'Write
 ------------------------------------------------------------
 IF MODE = "Explain for Understanding"
 ------------------------------------------------------------
-Style: Friendly, patient, supportive teacher.
-Goal: Student must truly understand in the simplest way.
-Strict Rules:
-- Use very simple, natural, conversational language. No academic jargon.
-- Use daily life examples and comparisons. Feel like a real classroom.
-- Structure (Mandatory bilingual titles):
-  1. সহজ পরিচিতি | Simple Introduction
-  2. আসল ধারণা সহজভাবে | Core Idea in Simple Words
-  3. বাস্তব জীবনের উদাহরণ | Real-life Example
-  4. ধাপে ধাপে বিশ্লেষণ | Step-by-step Breakdown
-  5. কেন গুরুত্বপূর্ণ | Why It Matters
-  6. ছোট সারাংশ | Simple Summary
-- Length: 700–1000 words. Be deep but simple.
-- Ask mini-questions like: "ভাবো তো...", "ধরো যদি..."
+Style: Friendly teacher, simple conversational language, real classroom feel.
+Length: 700–1000 words.
+Structure: 
+1. সহজ পরিচিতি | Simple Introduction
+2. আসল ধারণা সহজভাবে | Core Idea in Simple Words
+3. বাস্তব জীবনের উদাহরণ | Real-life Example
+4. ধাপে ধাপে বিশ্লেষণ | Step-by-step Breakdown
+5. কেন গুরুত্বপূর্ণ | Why It Matters
+6. ছোট সারাংশ | Simple Summary
 
 ------------------------------------------------------------
 IF MODE = "Write as Exam Answer"
 ------------------------------------------------------------
-Style: Strict university-level academic writer.
-Goal: High-scoring, full-mark exam script.
-Strict Rules:
-- Formal academic tone, structured paragraphs. No casual stories.
-- Structure (Mandatory bilingual titles):
-  1. ভূমিকা | Introduction
-  2. সংজ্ঞা | Definition
-  3. ঐতিহাসিক বা তাত্ত্বিক পটভূমি | Background / Theoretical Foundation
-  4. বিস্তারিত আলোচনা | Detailed Discussion
-  5. বিশ্লেষণাত্মক পর্যালোচনা | Analytical Evaluation
-  6. প্রয়োগ বা উদাহরণ | Application / Example
-  7. সমালোচনামূলক আলোচনা | Critical Discussion
-  8. উপসংহার | Conclusion
-- Length: 1200–1500 words. Provide massive depth.
+Style: High-scoring university academic writer. Formal tone.
+Length: 1200–1500 words. Massive depth.
+Structure:
+1. ভূমিকা | Introduction
+2. সংজ্ঞা | Definition
+3. পটভূমি | Background
+4. বিস্তারিত আলোচনা | Detailed Discussion
+5. বিশ্লেষণাত্মক পর্যালোচনা | Analytical Evaluation
+6. প্রয়োগ বা উদাহরণ | Application / Example
+7. সমালোচনামূলক আলোচনা | Critical Discussion
+8. উপসংহার | Conclusion
 
-------------------------------------------------------------
-GENERAL RULES:
-- Every heading MUST be bilingual (e.g., ভূমিকা | Introduction).
-- Return ONLY valid JSON.
-- If the topic is scientific include formulas. If philosophical include arguments.`;
+GENERAL: Return ONLY valid JSON. Title and every heading MUST be bilingual (e.g., ভূমিকা | Introduction).`;
 
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: { parts: [{ text: `Generate a comprehensive ${mode === 'EXAM' ? 'exam answer' : 'explanation'} for: "${currentTopic}" in ${language}. Ensure the length is met.` }] },
+        contents: { parts: [{ text: `Generate a full ${mode === 'EXAM' ? 'exam script' : 'teaching session'} for: "${currentTopic}" in ${language}.` }] },
         config: {
           systemInstruction,
           responseMimeType: 'application/json',
@@ -136,13 +145,12 @@ GENERAL RULES:
         }
       });
 
-      const text = response.text || '';
-      const data = JSON.parse(text) as ConceptExplanation;
+      const data = extractJSON(response.text || '');
       setResult(data);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error) {
       console.error("AI Generation Error:", error);
-      alert("Neural sync error: Failed to generate content. Please try a more specific topic or check connection.");
+      alert("Neural sync error: Synthesis failed. Please refine your topic or try again.");
     } finally {
       setIsGenerating(false);
     }
@@ -184,7 +192,6 @@ GENERAL RULES:
   const downloadPDF = () => {
     if (!result) return;
     
-    // Stable Blob Method for mobile compatibility
     const htmlContent = `
       <html>
         <head>
@@ -196,7 +203,6 @@ GENERAL RULES:
             h2 { color: #000; border-bottom: 1px solid #444; margin-top: 40px; font-size: 18pt; }
             p { text-align: justify; font-size: 13pt; margin-bottom: 15px; }
             .summary-box { border: 1.5px solid #000; padding: 20px; margin-top: 40px; border-radius: 10px; }
-            @media print { .no-print { display: none; } }
           </style>
         </head>
         <body>
@@ -209,9 +215,7 @@ GENERAL RULES:
             <p><strong>উপসংহার | Conclusion:</strong> ${result.conclusion}</p>
           </div>
           <script>
-            window.onload = function() {
-              window.print();
-            };
+            window.onload = function() { window.print(); };
           </script>
         </body>
       </html>
@@ -269,149 +273,101 @@ GENERAL RULES:
                   type="text"
                   defaultValue={topic}
                   onChange={(e) => setTopic(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') generateContent('UNDERSTANDING');
-                  }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') generateContent('UNDERSTANDING'); }}
                   placeholder="যেমন: ডিমান্ড অ্যান্ড সাপ্লাই"
                   className="w-full bg-slate-950/50 border border-white/10 rounded-2xl px-6 py-4 text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/60 transition-all placeholder:text-slate-700"
                 />
               </div>
 
-              <div className="flex flex-col gap-3 pt-2">
+              <div className="grid grid-cols-2 gap-3 pt-2">
                 <motion.button 
-                  whileHover={{ scale: 1.02, boxShadow: "0 10px 30px rgba(37, 99, 235, 0.3)" }}
+                  whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => generateContent('UNDERSTANDING')} 
                   disabled={isGenerating} 
-                  className="w-full py-5 rounded-[22px] font-black text-[11px] uppercase tracking-[3px] bg-blue-600 text-white disabled:opacity-50 transition-all flex items-center justify-center gap-3"
+                  className="py-4 rounded-xl font-black text-[9px] uppercase tracking-widest bg-blue-600 text-white disabled:opacity-50 transition-all flex flex-col items-center justify-center gap-2 shadow-lg"
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                  Explain Concept
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                  Explain
                 </motion.button>
                 
                 <motion.button 
-                  whileHover={{ scale: 1.02, boxShadow: "0 10px 30px rgba(99, 102, 241, 0.3)" }}
+                  whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => generateContent('EXAM')} 
                   disabled={isGenerating} 
-                  className="w-full py-5 rounded-[22px] font-black text-[11px] uppercase tracking-[3px] bg-indigo-600 text-white disabled:opacity-50 transition-all flex items-center justify-center gap-3"
+                  className="py-4 rounded-xl font-black text-[9px] uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-50 transition-all flex flex-col items-center justify-center gap-2 shadow-lg"
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                  University Exam Mode
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  Exam Mode
                 </motion.button>
               </div>
             </div>
-          </div>
-          
-          <div className="p-6 glass rounded-3xl border-white/5 bg-slate-900/20">
-             <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-3">Protocol Status</h4>
-             <div className="space-y-2">
-                <div className="flex justify-between text-[10px] font-bold">
-                   <span className="text-slate-400">Word Count Engine</span>
-                   <span className="text-blue-400">READY</span>
-                </div>
-                <div className="flex justify-between text-[10px] font-bold">
-                   <span className="text-slate-400">Tone Synthesis</span>
-                   <span className="text-indigo-400">DYNAMIC</span>
-                </div>
-             </div>
           </div>
         </div>
 
         <div className="lg:col-span-8">
           <AnimatePresence mode="wait">
             {!result && !isGenerating && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-[500px] glass rounded-[50px] border-white/5 border-dashed flex flex-col items-center justify-center text-center p-10 bg-slate-900/10">
-                <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center mb-6 text-slate-700">
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-[400px] glass rounded-[50px] border-white/5 border-dashed flex flex-col items-center justify-center text-center p-10 bg-slate-900/10">
+                <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-6 text-slate-700">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
                 </div>
-                <h2 className="text-2xl font-black text-slate-400 uppercase tracking-tighter mb-2">Academic Core Idle</h2>
-                <p className="text-slate-600 text-[10px] font-black uppercase tracking-widest">Enter a topic to begin synthesis protocol</p>
+                <h2 className="text-xl font-black text-slate-400 uppercase tracking-tighter">Academic Core Idle</h2>
+                <p className="text-slate-600 text-[9px] font-black uppercase tracking-widest mt-2">Enter a topic to begin synthesis</p>
               </motion.div>
             )}
 
             {isGenerating && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-[500px] flex flex-col items-center justify-center text-center space-y-8">
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-[400px] flex flex-col items-center justify-center text-center space-y-8">
                 <div className="relative">
-                  <div className="w-24 h-24 border-4 border-blue-500/20 rounded-full" />
-                  <div className="absolute top-0 w-24 h-24 border-4 border-blue-500 border-t-transparent rounded-full animate-spin shadow-[0_0_40px_rgba(59,130,246,0.2)]" />
+                  <div className="w-20 h-20 border-4 border-blue-500/20 rounded-full" />
+                  <div className="absolute top-0 w-20 h-20 border-4 border-blue-500 border-t-transparent rounded-full animate-spin shadow-[0_0_30px_rgba(59,130,246,0.2)]" />
                 </div>
                 <div className="space-y-3">
-                  <h3 className="text-3xl font-black text-white uppercase animate-pulse tracking-tighter">অপেক্ষা করুন...</h3>
-                  <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[4px]">Applying ${activeMode} Mode Optimization...</p>
+                  <h3 className="text-2xl font-black text-white uppercase animate-pulse tracking-tighter">সংশ্লেষণ করা হচ্ছে...</h3>
+                  <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[4px]">Generating ${activeMode} Content...</p>
                 </div>
               </motion.div>
             )}
 
             {result && (
               <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="space-y-10 pb-20">
-                <div className="flex flex-col md:flex-row items-center justify-between gap-6 bg-slate-900/60 p-8 md:p-10 rounded-[45px] border border-white/10 shadow-3xl">
-                  <h2 className="text-3xl md:text-4xl font-heading font-black uppercase text-white leading-tight tracking-tighter">{result.title}</h2>
+                <div className="flex flex-col md:flex-row items-center justify-between gap-6 bg-slate-900/60 p-8 rounded-[45px] border border-white/10 shadow-3xl">
+                  <h2 className="text-3xl font-heading font-black uppercase text-white tracking-tighter">{result.title}</h2>
                   <div className="flex gap-4">
-                    <motion.button 
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={downloadPDF} 
-                      className="px-8 py-3 glass rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-300 border-white/10 hover:bg-white/10"
-                    >
-                      Export PDF
-                    </motion.button>
-                    <motion.button 
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={handleSaveToNotes} 
-                      disabled={isSaving} 
-                      className="px-8 py-3 bg-blue-600 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white shadow-xl shadow-blue-500/20"
-                    >
-                      {isSaving ? 'Saving' : 'Save as Note'}
-                    </motion.button>
+                    <button onClick={downloadPDF} className="px-6 py-2.5 glass rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-300 border-white/10">PDF</button>
+                    <button onClick={handleSaveToNotes} disabled={isSaving} className="px-6 py-2.5 bg-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest text-white shadow-xl">Save</button>
                   </div>
                 </div>
 
-                <div className="space-y-12">
+                <div className="space-y-10">
                   {result.sections.map((section, idx) => (
-                    <motion.div 
-                      key={idx} 
-                      initial={{ opacity: 0, y: 20 }}
-                      whileInView={{ opacity: 1, y: 0 }}
-                      viewport={{ once: true }}
-                      className="glass p-10 md:p-14 rounded-[50px] border-white/5 bg-slate-900/40 border-l-[6px] border-l-blue-600 shadow-xl"
-                    >
-                      <h4 className="text-2xl md:text-3xl font-black text-blue-400 mb-8 tracking-tight">{section.heading}</h4>
-                      <p className="text-slate-300 font-medium text-lg md:text-xl text-justify whitespace-pre-wrap leading-relaxed opacity-90">{section.content}</p>
-                    </motion.div>
+                    <div key={idx} className="glass p-10 rounded-[50px] border-white/5 bg-slate-900/40 border-l-[6px] border-l-blue-600 shadow-xl">
+                      <h4 className="text-2xl font-black text-blue-400 mb-6 tracking-tight">{section.heading}</h4>
+                      <p className="text-slate-300 font-medium text-lg text-justify whitespace-pre-wrap leading-relaxed opacity-90">{section.content}</p>
+                    </div>
                   ))}
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                     <motion.div 
-                        initial={{ opacity: 0, x: -20 }}
-                        whileInView={{ opacity: 1, x: 0 }}
-                        viewport={{ once: true }}
-                        className="glass p-10 rounded-[50px] border-white/5 bg-blue-600/5"
-                     >
-                        <h4 className="text-[10px] font-black uppercase text-blue-400 mb-6 tracking-[5px]">Key Points | মূল পয়েন্ট</h4>
+                     <div className="glass p-10 rounded-[50px] border-white/5 bg-blue-600/5">
+                        <h4 className="text-[10px] font-black uppercase text-blue-400 mb-6 tracking-[5px]">Key Points</h4>
                         <ul className="space-y-4">
                           {result.keyPoints.map((p, i) => (
-                            <li key={i} className="flex gap-4 text-slate-200 text-base md:text-lg font-bold">
+                            <li key={i} className="flex gap-4 text-slate-200 text-base font-bold">
                                <span className="w-2 h-2 rounded-full bg-blue-500 mt-2.5 shrink-0" /> {p}
                             </li>
                           ))}
                         </ul>
-                     </motion.div>
+                     </div>
                      
-                     <motion.div 
-                        initial={{ opacity: 0, x: 20 }}
-                        whileInView={{ opacity: 1, x: 0 }}
-                        viewport={{ once: true }}
-                        className="glass p-10 rounded-[50px] border-white/5 bg-slate-900/80"
-                     >
-                        <h4 className="text-[10px] font-black uppercase text-indigo-400 mb-6 tracking-[5px]">Synthesis | সারসংক্ষেপ</h4>
-                        <p className="text-slate-200 italic font-medium leading-relaxed text-lg md:text-xl mb-8">"{result.summary}"</p>
+                     <div className="glass p-10 rounded-[50px] border-white/5 bg-slate-900/80">
+                        <h4 className="text-[10px] font-black uppercase text-indigo-400 mb-6 tracking-[5px]">Synthesis</h4>
+                        <p className="text-slate-200 italic font-medium leading-relaxed text-lg mb-8">"{result.summary}"</p>
                         <div className="pt-8 border-t border-white/5">
-                           <h4 className="text-[9px] font-black uppercase text-slate-500 mb-3 tracking-widest">Final Conclusion</h4>
-                           <p className="text-sm md:text-base text-slate-400 leading-relaxed">{result.conclusion}</p>
+                           <p className="text-sm text-slate-400 leading-relaxed">{result.conclusion}</p>
                         </div>
-                     </motion.div>
+                     </div>
                   </div>
                 </div>
               </motion.div>
