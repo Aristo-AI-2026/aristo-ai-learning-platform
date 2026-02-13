@@ -31,6 +31,11 @@ const AIConceptExplainer: React.FC = () => {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Fix: Ensure page starts at the top when the component is opened
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, []);
+
   const generateContent = async (mode: ExplainerMode) => {
     if (!topic.trim()) {
       alert("Please enter a topic.");
@@ -40,6 +45,9 @@ const AIConceptExplainer: React.FC = () => {
     setIsGenerating(true);
     setActiveMode(mode);
     setResult(null);
+
+    // Reset scroll when starting generation
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
@@ -133,6 +141,8 @@ For BOTH modes: Headings must follow "Bangla Title | English Title". Avoid short
 
       const data = JSON.parse(response.text || '{}') as ConceptExplanation;
       setResult(data);
+      // Scroll to top to see the title of the result
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error) {
       console.error("AI Generation Error:", error);
       alert("Neural sync error. Failed to generate high-density content.");
@@ -298,7 +308,7 @@ For BOTH modes: Headings must follow "Bangla Title | English Title". Avoid short
                   value={topic}
                   onChange={(e) => setTopic(e.target.value)}
                   placeholder="e.g. Theory of Relativity"
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white font-bold outline-none focus:ring-2 focus:ring-blue-600/50 transition-all placeholder:text-slate-800 shadow-inner"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/40 transition-all placeholder:text-slate-800 shadow-inner"
                 />
               </div>
 
