@@ -75,24 +75,16 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
     
     IDENTITY & NAME POLICY:
     - Your name is "Aristo" in English and "অ্যারিস্টো" in Bengali.
-    - NEVER repeat your name twice (e.g., avoid "Aristo Aristo" or "অ্যারিস্টো অ্যারিস্টো"). Say it only once.
+    - NEVER repeat your name twice. Say it only once.
 
     ORIGIN & CREATOR (MANDATORY RESPONSE):
     - If asked "Who created you?" or "Who made you?" (তোমাকে কে তৈরি করেছে?), you MUST respond exactly in Bengali: "আমাকে তৈরি করেছে মোঃ শুভ আলী, তিনি এই ARISTO প্ল্যাটফর্মের প্রতিষ্ঠাতা। তাঁর লক্ষ্য শিক্ষার্থীদের জন্য একটি আধুনিক, AI-চালিত শিক্ষাব্যবস্থা গড়ে তোলা। আমি তাঁর সেই স্বপ্নের অংশীদার।"
-    - If the user asks in English, provide a direct translation of the above.
 
-    ABOUT MOHAMMAD SHUVO ALI (If asked for more details):
-    - "মোহাম্মদ শুভ আলী বর্তমানে চট্টগ্রাম বিশ্ববিদ্যালয়ে পড়াশোনা করছেন। তাঁর সবচেয়ে পছন্দের কাজ হলো নতুন কিছু তৈরি করা। লেখালেখির প্রতি শুভর দারুণ কৌতূহল রয়েছে এবং তাঁর লেখা প্রথম বই হলো 'তুমি'। তাঁর সবচেয়ে কাছের মানুষ হলো তাঁর পার্টনার নীলা, যিনি বর্তমানে ঢাকা বিশ্ববিদ্যালয়ের দর্শন বিভাগে পড়াশোনা করছেন।"
-    - If asked in English, translate these details accurately: Mohammad Shuvo Ali studies at Chittagong University, loves creating new things, is curious about writing, wrote the book "Tumi", and his partner is Nila (Philosophy, Dhaka University).
+    ABOUT MOHAMMAD SHUVO ALI:
+    - Mohammad Shuvo Ali studies at Chittagong University, loves creating new things, curious about writing, wrote the book "Tumi", and his partner is Nila (Philosophy, Dhaka University).`;
 
-    GENERAL GUIDELINES:
-    - Respond in the language the user uses (Bengali or English). 
-    - Provide high-quality, concise academic assistance. Always be polite and brilliant.`;
-
-  // Auto-initiate voice if triggered from Dashboard
   useEffect(() => {
     if (isVoiceActive && !sessionRef.current) {
-      // Small delay to ensure component is fully mounted
       const timer = setTimeout(() => {
         startVoiceSession();
       }, 500);
@@ -105,11 +97,12 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isTyping, currentSessionId, isVoiceActive]);
+  }, [messages, isTyping, currentSessionId]);
 
   const handleSend = async () => {
-    if (!input.trim() || isTyping || !process.env.API_KEY) {
-      if (!process.env.API_KEY) alert("Neural link offline: API Key not detected.");
+    const apiKey = process.env.API_KEY;
+    if (!input.trim() || isTyping || !apiKey) {
+      if (!apiKey) alert("Neural link offline: API Key not detected in system. Please check Vercel settings.");
       return;
     }
     
@@ -120,7 +113,7 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
     setInput('');
     setIsTyping(true);
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey });
     
     try {
       const responseStream = await ai.models.generateContentStream({
@@ -140,26 +133,8 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
         if (textChunk) {
           fullText += textChunk;
           updateLastMessage(fullText);
-          if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-          }
         }
       }
-
-      if (currentSessionId && user) {
-        const updatedSessions = useStore.getState().chatSessions;
-        const currentSession = updatedSessions.find(s => s.id === currentSessionId);
-        if (currentSession) {
-          await supabase.from('chat_sessions').upsert({
-            id: currentSession.id,
-            user_id: user.id,
-            title: currentSession.title,
-            messages: currentSession.messages,
-            last_updated: Date.now()
-          });
-        }
-      }
-
     } catch (error) {
       console.error(error);
       addMessage({ id: Date.now().toString(), role: 'assistant', content: "Neural link error. Please try again later.", timestamp: Date.now() });
@@ -168,13 +143,22 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
   };
 
   const startVoiceSession = async () => {
-    if (!process.env.API_KEY) return;
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      alert("Neural link offline: API Key missing. Voice communication unavailable.");
+      setVoiceActive(false);
+      return;
+    }
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      
+      // Resume contexts as browsers often block them initially
+      await inputCtx.resume();
+      await outputCtx.resume();
       audioContextRef.current = outputCtx;
 
       let nextStartTime = 0;
@@ -196,7 +180,7 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
-          systemInstruction: systemInstruction + " Listen and speak naturally. Use the specified identity info."
+          systemInstruction: systemInstruction + " Speak naturally and concisely."
         },
         callbacks: {
           onopen: () => {
@@ -225,18 +209,16 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
                 1
               );
               const source = outputCtx.createBufferSource();
-              if (source) {
-                source.buffer = audioBuffer;
-                source.connect(outputCtx.destination);
-                source.addEventListener('ended', () => {
-                  sourceNodesRef.current.delete(source);
-                });
+              source.buffer = audioBuffer;
+              source.connect(outputCtx.destination);
+              source.addEventListener('ended', () => {
+                sourceNodesRef.current.delete(source);
+              });
 
-                nextStartTime = Math.max(nextStartTime, outputCtx.currentTime);
-                source.start(nextStartTime);
-                nextStartTime += audioBuffer.duration;
-                sourceNodesRef.current.add(source);
-              }
+              nextStartTime = Math.max(nextStartTime, outputCtx.currentTime);
+              source.start(nextStartTime);
+              nextStartTime += audioBuffer.duration;
+              sourceNodesRef.current.add(source);
             }
 
             if (message.serverContent?.interrupted) {
@@ -248,14 +230,17 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
             }
           },
           onclose: () => setVoiceActive(false),
-          onerror: () => setVoiceActive(false)
+          onerror: (e) => {
+            console.error("Voice link error:", e);
+            setVoiceActive(false);
+          }
         }
       });
       sessionRef.current = sessionPromise;
     } catch (e) {
       console.error("Voice Sync Error:", e);
       setVoiceActive(false);
-      alert('Microphone access required for Aristo voice node.');
+      alert('Microphone access required and API key must be valid.');
     }
   };
 
@@ -273,7 +258,6 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
       });
       sourceNodesRef.current.clear();
     } else {
-      if (isSTTActive) stopSTT();
       startVoiceSession();
     }
   };
@@ -285,15 +269,15 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
 
   const startSTT = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-
+    if (!SpeechRecognition) {
+      alert("Speech recognition is not supported in this browser.");
+      return;
+    }
     if (isVoiceActive) toggleVoice();
-
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'bn-BD';
-
     recognition.onstart = () => setIsSTTActive(true);
     recognition.onresult = (event: any) => {
       let finalTranscript = '';
@@ -304,7 +288,6 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
     };
     recognition.onerror = () => stopSTT();
     recognition.onend = () => setIsSTTActive(false);
-
     recognitionRef.current = recognition;
     recognition.start();
   };
@@ -315,21 +298,6 @@ const AICompanion: React.FC<AICompanionProps> = ({ onClose, fullScreen }) => {
       recognitionRef.current = null;
     }
     setIsSTTActive(false);
-  };
-
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    alert('Copied to clipboard');
-  };
-
-  const handleShare = async (text: string) => {
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: 'Aristo AI Response', text });
-      } catch (err) { console.error(err); }
-    } else {
-      alert('Manual copy required.');
-    }
   };
 
   return (
